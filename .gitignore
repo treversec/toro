@@ -1,0 +1,14 @@
+# Python caches / build artifacts
+__pycache__/
+*.py[cod]
+
+# Streamlit runtime state
+.streamlit/secrets.toml
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Env
+.env
