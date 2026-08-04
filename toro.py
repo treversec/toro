@@ -38,19 +38,19 @@ def _click_drum(freq, sr, dur, decay):
     return body + crack
 
 
-_SOUNDS = {"Drums (synthesized)": _click_drum,
-           "Pitched beeps (original)": _click_beep}
-
+_SOUNDS = {"Pitched beeps (original)": _click_beep,
+           "Drums (synthesized)": _click_drum}
 
 def make_click(freq, sr=SR, dur=0.09, decay=22):
     """Generate one note using the currently selected sound.
 
     `st.session_state["sound"]` holds the chosen sound name (see `_SOUNDS`);
-    falls back to the drums if unset. The chosen generator keeps the `freq`
-    argument, so meter n stays pitched at its mapped frequency either way.
+    falls back to the pitched beeps if unset. The chosen generator keeps the
+    `freq` argument, so meter n stays pitched at its mapped frequency either
+    way.
     """
-    name = st.session_state.get("sound", "Drums (synthesized)")
-    return _SOUNDS.get(name, _click_drum)(freq, sr=sr, dur=dur, decay=decay)
+    name = st.session_state.get("sound", "Pitched beeps (original)")
+    return _SOUNDS.get(name, _click_beep)(freq, sr=sr, dur=dur, decay=decay)
 
 
 def add_wrapped(track, click, start_idx, sr=SR):
