@@ -17,13 +17,40 @@ SR = 44100
 # harmonic of a chosen fundamental. Hearing it and seeing it line up is the
 # point.
 
-def make_click(freq, sr=SR, dur=0.09, decay=22):
-    """A short percussive tone: sine body + noisy transient + exponential decay."""
+def _click_beep(freq, sr, dur, decay):
+    """The original sound: a short pitched beep."""
     t = np.linspace(0, dur, int(sr * dur), endpoint=False)
-    envelope = np.exp(-decay * t)
     tone = np.sin(2 * np.pi * freq * t)
     transient = np.random.uniform(-1, 1, len(t)) * np.exp(-90 * t) * 0.35
-    return (tone + transient) * envelope
+    return (tone + transient) * np.exp(-decay * t)
+
+
+def _click_drum(freq, sr, dur, decay):
+    """A synthesized drum hit, still pitched at `freq`: a fast downward pitch
+    sweep on the attack gives the "thump", a bright noise burst gives the
+    initial "crack", and a punchy exponential decay keeps it percussive."""
+    n = int(sr * dur)
+    t = np.linspace(0, dur, n, endpoint=False)
+    sweep = freq * (1.0 + 1.9 * np.exp(-40 * t))
+    phase = 2 * np.pi * np.cumsum(sweep) / sr
+    body = np.sin(phase) * np.exp(-decay * t)
+    crack = np.random.uniform(-1, 1, n) * np.exp(-180 * t) * 0.5
+    return body + crack
+
+
+_SOUNDS = {"Drums (synthesized)": _click_drum,
+           "Pitched beeps (original)": _click_beep}
+
+
+def make_click(freq, sr=SR, dur=0.09, decay=22):
+    """Generate one note using the currently selected sound.
+
+    `st.session_state["sound"]` holds the chosen sound name (see `_SOUNDS`);
+    falls back to the drums if unset. The chosen generator keeps the `freq`
+    argument, so meter n stays pitched at its mapped frequency either way.
+    """
+    name = st.session_state.get("sound", "Drums (synthesized)")
+    return _SOUNDS.get(name, _click_drum)(freq, sr=sr, dur=dur, decay=decay)
 
 
 def add_wrapped(track, click, start_idx, sr=SR):
@@ -41,6 +68,17 @@ def add_wrapped(track, click, start_idx, sr=SR):
     return track
 
 
+def meter_freq(n, base_freq):
+    """Map a meter to its drum frequency, ascending gently with compression.
+
+    Strict harmonics (`base_freq * n`) leap a full overtone per meter and climb
+    too fast for low drums. Instead, low meters stay close together and the
+    climb softens as we ascend, so the base of the pyramid sits low while
+    keeping a rising, still-distinct pitch per meter.
+    """
+    return base_freq * (1 + 0.65 * (n - 1) ** 0.8)
+
+
 def render_meter_track(n, cycle_len, base_freq, sr=SR):
     """n evenly spaced clicks across one cycle, pitched at the nth harmonic.
 
@@ -51,7 +89,7 @@ def render_meter_track(n, cycle_len, base_freq, sr=SR):
     """
     total = int(cycle_len * sr)
     track = np.zeros(total)
-    click = make_click(base_freq * n, sr=sr)
+    click = make_click(meter_freq(n, base_freq), sr=sr)
     positions = np.linspace(0, cycle_len, n, endpoint=False)
     for p in positions:
         add_wrapped(track, click, int(p * sr))
@@ -111,7 +149,7 @@ def render_node(node, start, end, base_freq, amp_scale, amp, track, sr):
     """
     span = end - start
     step = span / node.meter
-    click = make_click(base_freq * node.meter, sr=sr)
+    click = make_click(meter_freq(node.meter, base_freq), sr=sr)
     for i in range(node.meter):
         t = start + i * step
         add_wrapped(track, click * amp, int(t * sr))
@@ -146,7 +184,7 @@ def render_forest(roots, cycle_len, base_freq, amp_scale=0.6, sr=SR,
         meters = set()
         for n in roots:
             collect_meters(n, meters)
-        click = make_click(base_freq * min(meters), sr=sr)
+        click = make_click(meter_freq(min(meters), base_freq), sr=sr)
         add_wrapped(one_cycle, click * 1.6, 0, sr)
     peak = np.max(np.abs(one_cycle))
     if peak > 0:
@@ -272,7 +310,14 @@ not just the beat.
 
 st.sidebar.header("Settings")
 cycle_len = st.sidebar.slider("Cycle length ('one'), seconds", 1.0, 4.0, 2.0, 0.25)
-base_freq = st.sidebar.slider("Fundamental frequency (Hz)", 55, 220, 110, 5)
+base_freq = st.sidebar.slider("Fundamental (lowest) frequency (Hz)",
+                              20, 140, 40, 5)
+sound = st.sidebar.radio(
+    "Sound",
+    options=list(_SOUNDS),
+    index=0,
+    key="sound",
+)
 num_cycles = st.sidebar.slider(
     "Cycle repeats per buffer (loop duration)",
     min_value=1, max_value=512, value=4, step=1,
