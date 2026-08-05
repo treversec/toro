@@ -79,8 +79,34 @@ def meter_freq(n, base_freq):
     return base_freq * (1 + 0.65 * (n - 1) ** 0.8)
 
 
+# Defaults for the "raise upbeats" option (see sidebar widgets). Session state
+# holds the live values: enable_upbeats (bool) and upbeat_factor (float).
+DEFAULT_UPBEAT_FACTOR = 1.5
+
+
+def beat_freq(n, base_freq, beat_index):
+    """Pitch of one beat of a meter, optionally raising the upbeats.
+
+    `beat_index` is 0-based: the 1st/3rd/5th... beats (index 0, 2, 4... — the
+    downbeats) ring at the meter's own pitch. When enabled, the 2nd/4th/6th...
+    beats (index 1, 3, 5... — the upbeats) ring `upbeat_factor` higher.
+
+    Reads the toggle and factor from `st.session_state`, so it's configurable
+    from the sidebar.
+    """
+    freq = meter_freq(n, base_freq)
+    if st.session_state.get("enable_upbeats", False) and beat_index % 2 == 1:
+        factor = st.session_state.get("upbeat_factor", DEFAULT_UPBEAT_FACTOR)
+        freq *= factor
+    return freq
+
+
 def render_meter_track(n, cycle_len, base_freq, sr=SR):
     """n evenly spaced clicks across one cycle, pitched at the nth harmonic.
+
+    Downbeats (the odd 1st/3rd/5th... beats) ring at the meter's base pitch,
+    while upbeats (the even 2nd/4th/6th...) ring a raised pitch, so the two are
+    easy to tell apart.
 
     Returns a single cycle built to loop seamlessly: a click that would
     overhang the end of the cycle is wrapped back onto the start, so the
@@ -89,9 +115,10 @@ def render_meter_track(n, cycle_len, base_freq, sr=SR):
     """
     total = int(cycle_len * sr)
     track = np.zeros(total)
-    click = make_click(meter_freq(n, base_freq), sr=sr)
     positions = np.linspace(0, cycle_len, n, endpoint=False)
-    for p in positions:
+    for i, p in enumerate(positions):
+        freq = beat_freq(n, base_freq, i)
+        click = make_click(freq, sr=sr)
         add_wrapped(track, click, int(p * sr))
     return track
 
@@ -149,9 +176,9 @@ def render_node(node, start, end, base_freq, amp_scale, amp, track, sr):
     """
     span = end - start
     step = span / node.meter
-    click = make_click(meter_freq(node.meter, base_freq), sr=sr)
     for i in range(node.meter):
         t = start + i * step
+        click = make_click(beat_freq(node.meter, base_freq, i), sr=sr)
         add_wrapped(track, click * amp, int(t * sr))
         if i in node.on:
             for child in node.patterns:
@@ -318,6 +345,21 @@ sound = st.sidebar.radio(
     index=0,
     key="sound",
 )
+st.sidebar.toggle(
+    "Raise upbeats (even beats) in pitch",
+    value=st.session_state.get("enable_upbeats", False),
+    key="enable_upbeats",
+    help="Make the even-numbered beats (2nd, 4th, 6th...) ring higher than "
+         "the odd-numbered downbeats (1st, 3rd, 5th...).",
+)
+if st.session_state.get("enable_upbeats", False):
+    st.sidebar.slider(
+        "Upbeat pitch factor",
+        min_value=1.05, max_value=3.0, value=1.5, step=0.05,
+        key="upbeat_factor",
+        help="How much higher the upbeats ring than the downbeats "
+             "(1.05 = barely, 3.0 = very high).",
+    )
 num_cycles = st.sidebar.slider(
     "Cycle repeats per buffer (loop duration)",
     min_value=1, max_value=512, value=4, step=1,
