@@ -53,6 +53,58 @@ def make_click(freq, sr=SR, dur=0.09, decay=22):
     return _SOUNDS.get(name, _click_beep)(freq, sr=sr, dur=dur, decay=decay)
 
 
+def _accent_deep_drum(freq, sr=SR, dur=0.25):
+    """A low, booming kick for the start of the cycle. A longer pitch sweep
+    down from above the note gives a sub-heavy "thump" that reads as a downbeat
+    without covering the meter clicks layered on the same instant."""
+    n = int(sr * dur)
+    t = np.linspace(0, dur, n, endpoint=False)
+    sweep = freq * (1.0 + 2.2 * np.exp(-25 * t))
+    phase = 2 * np.pi * np.cumsum(sweep) / sr
+    body = np.tanh(np.sin(phase)) * np.exp(-18 * t)
+    return body * 0.9
+
+
+def _accent_high_chime(freq, sr=SR, dur=0.35):
+    """A bright, bell-like chime for the start of the cycle: a sine with
+    inharmonic partials and a slow decay, so it rings out clearly over the
+    metered clicks."""
+    n = int(sr * dur)
+    t = np.linspace(0, dur, n, endpoint=False)
+    env = np.exp(-9 * t)
+    partials = (1.0 * np.sin(2 * np.pi * freq * t)
+                + 0.5 * np.sin(2 * np.pi * freq * 2.76 * t)
+                + 0.3 * np.sin(2 * np.pi * freq * 5.4 * t))
+    return partials * env
+
+
+_CYCLE_ACCENTS = {"Deep drum": _accent_deep_drum,
+                  "High chime": _accent_high_chime}
+
+
+def make_cycle_accent(sr=SR):
+    """The indicator sound for the start of every cycle (where all meters'
+    beats intersect), selected from `st.session_state["cycle_accent"]`; returns
+    a zero-length array when set to "Off" or unset. The pitch is anchored low
+    so the deep drum/ringing chime reads as a clear downbeat alongside the
+    (louder) metered voices."""
+    name = st.session_state.get("cycle_accent", "Off")
+    gen = _CYCLE_ACCENTS.get(name, None)
+    if gen is None:
+        return np.zeros(0)
+    return gen(80.0, sr=sr)
+
+
+def add_cycle_accent(track, sr=SR):
+    """Add the cycle-start indicator at t=0 if one is selected. `track` is
+    modified in place; the indicator is added just before each cycle's
+    downbeat so it marks where every meter's first beat intersects."""
+    accent = make_cycle_accent(sr=sr)
+    if len(accent) == 0:
+        return
+    add_wrapped(track, accent, 0, sr=sr)
+
+
 def add_wrapped(track, click, start_idx, sr=SR):
     """Add a click to a loop-safe track at start_idx, wrapping any overflow
     back to the start so the waveform loops seamlessly."""
@@ -127,6 +179,7 @@ def render_combined(meters, cycle_len, base_freq, sr=SR):
     one_cycle = np.zeros(int(cycle_len * sr))
     for n in meters:
         one_cycle += render_meter_track(n, cycle_len, base_freq, sr=sr)
+    add_cycle_accent(one_cycle, sr=sr)
     peak = np.max(np.abs(one_cycle))
     if peak > 0:
         one_cycle = one_cycle / peak * 0.9
@@ -186,33 +239,21 @@ def render_node(node, start, end, base_freq, amp_scale, amp, track, sr):
                             amp * amp_scale, track, sr)
 
 
-def collect_meters(node, acc):
-    acc.add(node.meter)
-    for c in node.patterns:
-        collect_meters(c, acc)
-    return acc
-
-
 def render_forest(roots, cycle_len, base_freq, amp_scale=0.6, sr=SR,
                   accent=True):
     """Render a list of root patterns (the base pyramid) into one cycle.
 
     Each root is a `Node`. All meters at all depths sound; sub-patterns are
     quieter (`amp_scale` per level) and pitched at their own harmonic. When
-    `accent` is on, the "one" of the cycle (the first beat at t=0) is given an
-    extra, pitched impulse at the lowest harmonic present in the pyramid, so
-    the downbeat stands out.
+    `accent` is on, the cycle-start indicator (where all beats intersect at
+    t=0) is added per the selected cycle-accent option.
     """
     one_cycle = np.zeros(int(cycle_len * sr))
     for node in roots:
         render_node(node, 0.0, cycle_len, base_freq, amp_scale, 1.0,
                     one_cycle, sr)
-    if accent and roots:
-        meters = set()
-        for n in roots:
-            collect_meters(n, meters)
-        click = make_click(meter_freq(min(meters), base_freq), sr=sr)
-        add_wrapped(one_cycle, click * 1.6, 0, sr)
+    if accent:
+        add_cycle_accent(one_cycle, sr=sr)
     peak = np.max(np.abs(one_cycle))
     if peak > 0:
         one_cycle = one_cycle / peak * 0.9
@@ -360,6 +401,15 @@ if st.session_state.get("enable_upbeats", False):
         help="How much higher the upbeats ring than the downbeats "
              "(1.05 = barely, 3.0 = very high).",
     )
+cycle_accent = st.sidebar.radio(
+    "Cycle start indicator",
+    options=["Off"] + list(_CYCLE_ACCENTS),
+    index=0,
+    key="cycle_accent",
+    help="Add a distinct sound at the start of every cycle — where all the "
+         "meters' first beats intersect — to mark the 'one'. The individual "
+         "meter sounds continue to play on top.",
+)
 num_cycles = st.sidebar.slider(
     "Cycle repeats per buffer (loop duration)",
     min_value=1, max_value=512, value=4, step=1,
