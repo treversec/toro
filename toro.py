@@ -53,15 +53,15 @@ def make_click(freq, sr=SR, dur=0.09, decay=22):
     return _SOUNDS.get(name, _click_beep)(freq, sr=sr, dur=dur, decay=decay)
 
 
-def _accent_deep_drum(freq, sr=SR, dur=0.25):
-    """A low, booming kick for the start of the cycle. A longer pitch sweep
-    down from above the note gives a sub-heavy "thump" that reads as a downbeat
-    without covering the meter clicks layered on the same instant."""
+def _accent_deep_drum(freq, sr=SR, dur=0.16):
+    """A clean, sub-heavy kick for the start of the cycle. A short downward
+    pitch sweep gives the "thump"; the decay is kept fast and tight so it reads
+    as a single downbeat rather than a ringing boom (no echo)."""
     n = int(sr * dur)
     t = np.linspace(0, dur, n, endpoint=False)
-    sweep = freq * (1.0 + 2.2 * np.exp(-25 * t))
+    sweep = freq * (1.0 + 1.6 * np.exp(-45 * t))
     phase = 2 * np.pi * np.cumsum(sweep) / sr
-    body = np.tanh(np.sin(phase)) * np.exp(-18 * t)
+    body = np.sin(phase) * np.exp(-28 * t)
     return body * 0.9
 
 
@@ -175,15 +175,45 @@ def render_meter_track(n, cycle_len, base_freq, sr=SR):
     return track
 
 
-def render_combined(meters, cycle_len, base_freq, sr=SR):
-    one_cycle = np.zeros(int(cycle_len * sr))
+def render_meter_mix(meters, cycle_len, base_freq, sr=SR):
+    """Mix the given meters into one (mono) cycle, adding the cycle accent."""
+    cycle = np.zeros(int(cycle_len * sr))
     for n in meters:
-        one_cycle += render_meter_track(n, cycle_len, base_freq, sr=sr)
-    add_cycle_accent(one_cycle, sr=sr)
-    peak = np.max(np.abs(one_cycle))
+        cycle += render_meter_track(n, cycle_len, base_freq, sr=sr)
+    add_cycle_accent(cycle, sr=sr)
+    return cycle
+
+
+def _normalize(cycle):
+    peak = np.max(np.abs(cycle))
     if peak > 0:
-        one_cycle = one_cycle / peak * 0.9
-    return one_cycle
+        cycle = cycle / peak * 0.9
+    return cycle
+
+
+def render_combined(meters, cycle_len, base_freq, sr=SR):
+    """Render the base pyramid into one cycle.
+
+    Returns a mono array by default. When `st.session_state["stereo"]` is set,
+    the meters are split across two channels (half on the left, half on the
+    right) and the result is a stereo array of shape `(2, N)`; the cycle-start
+    indicator stays centred on both channels.
+    """
+    if not st.session_state.get("stereo", False):
+        return _normalize(render_meter_mix(meters, cycle_len, base_freq, sr=sr))
+
+    ordered = sorted(meters)
+    if len(ordered) < 2:
+        left = render_meter_mix(ordered, cycle_len, base_freq, sr=sr)
+        return np.vstack([left, left])
+    mid = (len(ordered) + 1) // 2
+    left = render_meter_mix(ordered[:mid], cycle_len, base_freq, sr=sr)
+    right = render_meter_mix(ordered[mid:], cycle_len, base_freq, sr=sr)
+    stereo = np.vstack([left, right])
+    peak = np.max(np.abs(stereo))
+    if peak > 0:
+        stereo = stereo / peak * 0.9
+    return stereo
 
 
 # ---------------------------------------------------------------------------
@@ -263,10 +293,15 @@ def render_forest(roots, cycle_len, base_freq, amp_scale=0.6, sr=SR,
 def to_wav_bytes(samples, sr=SR):
     buf = io.BytesIO()
     with wave.open(buf, "wb") as wf:
-        wf.setnchannels(1)
+        if samples.ndim == 2:  # stereo, shape (2, N) -> true L/R interleave
+            wf.setnchannels(2)
+            interleaved = samples.T.reshape(-1)
+        else:
+            wf.setnchannels(1)
+            interleaved = samples
         wf.setsampwidth(2)
         wf.setframerate(sr)
-        wf.writeframes((samples * 32767).astype(np.int16).tobytes())
+        wf.writeframes((interleaved * 32767).astype(np.int16).tobytes())
     return buf.getvalue()
 
 
@@ -409,6 +444,14 @@ cycle_accent = st.sidebar.radio(
     help="Add a distinct sound at the start of every cycle — where all the "
          "meters' first beats intersect — to mark the 'one'. The individual "
          "meter sounds continue to play on top.",
+)
+st.sidebar.toggle(
+    "Stereo (split meters L/R)",
+    value=st.session_state.get("stereo", False),
+    key="stereo",
+    help="Spread the base pyramid across two channels: half the meters on the "
+         "left, half on the right. The cycle-start indicator stays centred on "
+         "both. Affects the base pyramid (sections 1 & 2).",
 )
 num_cycles = st.sidebar.slider(
     "Cycle repeats per buffer (loop duration)",
