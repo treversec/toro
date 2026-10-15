@@ -1,7 +1,7 @@
 # Toro's Harmonic Rhythm
 
 An interactive polyrhythm app based on percussionist and theorist [Efrain
-Toro](https://en.wikipedia.org/wiki/Efra%C3%ADn_Toro)'s *harmonic
+Toro](https://rhythmline.net/about-efrain/)'s *harmonic
 perspective of rhythm* — built with [Streamlit](https://streamlit.io/).
 
 Instead of counting one meter and deriving another from it (the *linear*
@@ -69,7 +69,7 @@ requirements.txt   Python dependencies
 
 ## Credits
 
-The musical idea belongs to [Efrain Toro](https://en.wikipedia.org/wiki/Efra%C3%ADn_Toro);
+The musical idea belongs to [Efrain Toro](https://rhythmline.net/about-efrain/);
 this app is an independent demonstration of his teaching. See *The Odd in
 You* for the 2-and-3-backed pyramid exercise he describes.
 
