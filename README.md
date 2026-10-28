@@ -30,7 +30,7 @@ fundamental, so you hear the metaphor, not just the beat.
   flip.
 - **Rich, configurable sound.** Pitched beeps or synthesized drums,
   a separate low-downbeat/cycle-start accent ("deep drum" or "high chime"),
-  an optional "raise upbeats" setting, and an optional "waves under the
+  an optional "and" between each beat, and an optional "waves under the
   clicks" mode where each beat's audible swell rings at that pulse's own
   frequency. The *selection order* is the perspective — in the pyramid and in
   the fractals alike: the first meter you pick is the foundation — lowest and

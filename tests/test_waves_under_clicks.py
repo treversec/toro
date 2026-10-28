@@ -45,20 +45,49 @@ def test_wave_pitch_tracks_the_meter():
     assert abs(track_hi[mid_beat]) < abs(track_lo[mid_beat])
 
 
-def test_upbeat_wave_pitches_higher_like_the_upbeat_pulse():
+def test_and_rings_at_the_upbeat_factor():
     st.session_state["enable_upbeats"] = True
     st.session_state["upbeat_factor"] = 1.5
-    track = np.zeros(3000)
-    toro._add_wave(track, 3, 0.0, 3.0, 40, sr=1000, amp=0.4)
-    # meter 3's beats ring at 0, 1, 2 — beat 1 is the raised upbeat. The swells
-    # half-a-beat around beats 1 and 2 share the same outline; the upbeat's
-    # crosses zero far more often because its tone is 1.5x the frequency.
+    # The "and" between the beats rings at the upbeat pitch — the pulse pitch times
+    # the factor — while every beat itself rings at the pulse's own pitch.
+    assert toro.and_freq(3, 40) == pytest.approx(toro.meter_freq(3, 40) * 1.5)
+    assert toro.beat_freq(3, 40, 1) == toro.beat_freq(3, 40, 0)
+    st.session_state["enable_upbeats"] = False
+
+
+def test_and_click_plays_between_the_beats():
+    st.session_state["enable_upbeats"] = True
+    st.session_state["waves"] = False
+    track = toro.render_meter_track(2, 1.0, 40, sr=1000)  # beats at 0 & 0.5s
+    assert max(abs(track[249:253])) > 0.2  # the "and" sounds at 0.25s — "one *and*, two"
+    st.session_state["enable_upbeats"] = False
+    quiet = toro.render_meter_track(2, 1.0, 40, sr=1000)
+    assert abs(quiet[250]) < 0.01    # toggle off: nothing between the beats
+
+
+def test_wave_peaks_at_the_and_and_glides_up():
+    st.session_state["enable_upbeats"] = True
+    st.session_state["upbeat_factor"] = 1.5
+    t = np.zeros(1000)
+    toro._add_wave(t, 2, 0.0, 1.0, 40, sr=1000, amp=1.0)  # beats at 0 & 0.5, "and" at 0.25
     def crossings(x):
         return int(np.sum(np.diff(np.sign(x)) != 0))
-    downbeat_swell = track[1600:2400]  # centered on beat 2 (meter pitch, 85 Hz)
-    upbeat_swell = track[600:1400]     # centered on beat 1 (raised pitch, 128 Hz)
-    # 1.5x the pitch means ~1.5x the zero crossings — a margin, not a coin flip.
-    assert crossings(upbeat_swell) > 1.2 * crossings(downbeat_swell)
+    # The swell crests on the "and" and sinks to silence at the beats, and its tone
+    # glides from the downbeat pitch up to the upbeat pitch, so the dense stretch
+    # around the "and" crosses zero far more often than the sparse stretch right
+    # after a beat — a margin, not a coin flip.
+    assert max(abs(t[200:300])) > 0.5   # the swell's peak sits on the "and"
+    assert abs(t[480]) < 0.1            # and fades to silence at the beats
+    assert crossings(t[200:300]) > 1.2 * crossings(t[0:100])
+    st.session_state["enable_upbeats"] = False
+
+
+def test_render_node_plays_an_and_between_each_beat():
+    st.session_state["enable_upbeats"] = True
+    st.session_state["waves"] = True
+    track = np.zeros(3000)
+    toro.render_node(toro.Node(3), 0.0, 3.0, 40, 0.6, 1.0, track, 1000)
+    assert abs(track[500]) > 0.15     # the "and" between beat 0 (0s) and beat 1 (1s)
     st.session_state["enable_upbeats"] = False
 
 
@@ -89,18 +118,21 @@ def test_build_fractal_ranks_by_selection_order_at_every_depth():
     assert set(pairs) == {(3, 1), (2, 2)}
 
 def test_render_meter_track_silent_between_beats_when_disabled():
+    st.session_state["enable_upbeats"] = False
     st.session_state["waves"] = False
     cycle = toro.render_meter_track(4, 2.0, 40, sr=1000)
     assert abs(cycle[250]) < 0.01  # halfway between beats, clicks long decayed
 
 
 def test_render_meter_track_adds_wave_between_beats_when_enabled():
+    st.session_state["enable_upbeats"] = False
     st.session_state["waves"] = True
     cycle = toro.render_meter_track(2, 2.0, 40, sr=1000)
     assert abs(cycle[100]) > 0.1  # swelling quarter-beat region of meter 2, audible
 
 
 def test_render_node_scales_wave_with_node_amplitude():
+    st.session_state["enable_upbeats"] = False
     st.session_state["waves"] = True
     track = np.zeros(1000)
     toro.render_node(toro.Node(2), 0.0, 1.0, 40, 0.6, 0.5, track, 1000)

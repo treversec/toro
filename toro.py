@@ -122,25 +122,43 @@ def add_wrapped(track, click, start_idx, sr=SR):
 
 def _add_wave(track, meter, start, end, base_freq, sr=SR, amp=1.0, rank=None):
     """Mix the audible phase-locked waves under the clicks, one swell per beat,
-    each pitched at that beat's *own* pulse frequency: the swell into a downbeat
-    rings at the pitch of the meter's (rank-keyed) position, and (when the
-    upbeats are raised) the swell into an upbeat rings at the raised pitch — so
-    each wave names the pulse it leads into. Every swell rises from silence in the
-    trough after the previous click, peaks at its click, and sinks back to
-    silence, so beats meet at zeros and the loop stays seamless. `amp` scales
-    how loud the waves are; fractal layers pass their own amplitude down, so
-    deeper layers swell quieter, exactly like their clicks. `rank` (position in
-    the selection order) keys the pitch; when omitted the meter's own number
-    does.
+    each pitched at that beat's *own* pulse frequency … every swell rises from
+    silence in the trough after the previous click, sinks to silence at the next,
+    and the curve swallows the groove. `amp` scales how loud the waves are;
+    fractal layers pass their own amplitude down, so deeper layers swell quieter,
+    exactly like their clicks. `rank` (position in the selection order) keys the
+    pitch; when omitted the meter's own number does.
+
+    When "Play 'and' between each beat" is on, each swell *crests on the "and"*
+    — halfway between two beats — and its tone glides from the downbeat pitch
+    up to the upbeat pitch (`upbeat_factor` ×) as it swells, so the rise and
+    fall of every wave names the pulse that leads into its beat.
     """
     span = end - start
     n = len(track)
     beat_sr = span / meter * sr           # samples from one trough to the next
     width = int(beat_sr)
     half = beat_sr / (2 * sr)             # seconds from a beat to its troughs
+    if st.session_state.get("enable_upbeats", False):
+        period = span / meter             # one swell per beat-interval
+        f0 = meter_freq(meter, base_freq, rank)
+        f_and = and_freq(meter, base_freq, rank)
+        for k in range(meter):
+            tb = start + k * period
+            t = np.linspace(tb, tb + period, width, endpoint=False)
+            env = (1.0 + np.cos(2 * np.pi * (t - tb - half) / period)) / 2.0
+            freq = f0 + (f_and - f0) * env
+            tone = np.sin(2 * np.pi * np.cumsum(freq) / sr)
+            seg = amp * tone * env
+            a = int(tb * sr)
+            i1 = min(a + width, n)
+            track[a:i1] += seg[:i1 - a]
+            if a + width > n:
+                track[: a + width - n] += seg[i1 - a:]
+        return track
     for k in range(meter):
         tb = start + k * span / meter     # the click this swell leads into
-        center = int(tb * sr)             # the click's own sample
+        center = int(tb * sr)            # the click's own sample
         t = np.linspace(tb - half, tb + half, width, endpoint=False)
         env = (1.0 + np.cos(2 * np.pi * (t - tb) * sr / beat_sr)) / 2.0
         tone = np.sin(2 * np.pi * beat_freq(meter, base_freq, k, rank) * (t - tb))
@@ -170,28 +188,33 @@ def meter_freq(n, base_freq, rank=None):
     return base_freq * (1 + 0.65 * (n - 1) ** 0.8)
 
 
-# Defaults for the "raise upbeats" option (see sidebar widgets). Session state
-# holds the live values: enable_upbeats (bool) and upbeat_factor (float).
+# Defaults for the "Play 'and' between each beat" option (see sidebar widgets).
+# Session state holds the live values: enable_upbeats (bool) and upbeat_factor (float).
 DEFAULT_UPBEAT_FACTOR = 1.5
 
 
 def beat_freq(n, base_freq, beat_index, rank=None):
-    """Pitch of one beat of a meter, optionally raising the upbeats.
-
-    `beat_index` is 0-based: the 1st/3rd/5th... beats (index 0, 2, 4... — the
-    downbeats) ring at the meter's own pitch. When enabled, the 2nd/4th/6th...
-    beats (index 1, 3, 5... — the upbeats) ring `upbeat_factor` higher.
-
-    `rank` is the meter's *position in the selection order*: rank 1 is the
-    foundation (lowest rung), rank 2 the next, and so on; when omitted the
-    meter's own number keys the pitch. Reads the toggle and factor from
-    `st.session_state`, so it's configurable from the sidebar.
+    """Pitch of one beat of a meter: every beat rings at the meter's own pitch —
+    the (rank-keyed) position's rung, so each pulse leads with its own voice.
+    When "Play 'and' between each beat" is on, the between-beat "and" rings
+    `upbeat_factor` higher (`and_freq`); `beat_index` is kept so call sites say
+    which beat they ring, even though beats now share one pitch.
     """
-    freq = meter_freq(n, base_freq, rank)
-    if st.session_state.get("enable_upbeats", False) and beat_index % 2 == 1:
-        factor = st.session_state.get("upbeat_factor", DEFAULT_UPBEAT_FACTOR)
-        freq *= factor
-    return freq
+    return meter_freq(n, base_freq, rank)
+
+
+def and_freq(n, base_freq, rank=None):
+    """Pitch of the "and" that plays halfway between a meter's beats: the meter's
+    own pitch times the `upbeat_factor`. Reads the factor from `st.session_state`,
+    so it's configurable from the sidebar.
+    """
+    factor = st.session_state.get("upbeat_factor", DEFAULT_UPBEAT_FACTOR)
+    return meter_freq(n, base_freq, rank) * factor
+
+
+# The "and" between beats is a bit lighter than its beat, so the beat still leads
+# and the subdivision reads as "one *and*, two *and*" rather than a faster pulse.
+AND_GAIN = 0.7
 
 
 def render_meter_track(n, cycle_len, base_freq, sr=SR, rank=None):
@@ -212,9 +235,12 @@ def render_meter_track(n, cycle_len, base_freq, sr=SR, rank=None):
     track = np.zeros(total)
     positions = np.linspace(0, cycle_len, n, endpoint=False)
     for i, p in enumerate(positions):
-        freq = beat_freq(n, base_freq, i, rank)
-        click = make_click(freq, sr=sr)
+        click = make_click(beat_freq(n, base_freq, i, rank), sr=sr)
         add_wrapped(track, click, int(p * sr))
+        if st.session_state.get("enable_upbeats", False):
+            and_p = p + cycle_len / n / 2  # the "and" between this beat and the next
+            add_wrapped(track, make_click(and_freq(n, base_freq, rank), sr=sr) * AND_GAIN,
+                         int(and_p * sr))
     if st.session_state.get("waves", False):
         wave_amp = st.session_state.get("wave_amp", DEFAULT_WAVE_AMP)
         _add_wave(track, n, 0.0, cycle_len, base_freq, sr=sr, amp=wave_amp, rank=rank)
@@ -330,6 +356,9 @@ def render_node(node, start, end, base_freq, amp_scale, amp, track, sr):
         t = start + i * step
         click = make_click(beat_freq(node.meter, base_freq, i, node.rank), sr=sr)
         add_wrapped(track, click * amp, int(t * sr))
+        if st.session_state.get("enable_upbeats", False):
+            and_click = make_click(and_freq(node.meter, base_freq, node.rank), sr=sr)
+            add_wrapped(track, and_click * amp * AND_GAIN, int((t + step / 2) * sr))
         if i in node.on:
             for child in node.patterns:
                 render_node(child, t, t + step, base_freq, amp_scale,
@@ -507,19 +536,19 @@ if st.session_state.get("waves", False):
         help="How loud the underlying wave is relative to the clicks.",
     )
 st.sidebar.toggle(
-    "Raise upbeats (even beats) in pitch",
+    "Play 'and' between each beat",
     value=st.session_state.get("enable_upbeats", False),
     key="enable_upbeats",
-    help="Make the even-numbered beats (2nd, 4th, 6th...) ring higher than "
-         "the odd-numbered downbeats (1st, 3rd, 5th...).",
+    help="Add a lighter between-each 'and' — the 'and' of 'one and, two and' — "
+         "halfway between a pulse's beats, ringing at the upbeat pitch.",
 )
 if st.session_state.get("enable_upbeats", False):
     st.sidebar.slider(
         "Upbeat pitch factor",
         min_value=1.05, max_value=3.0, value=1.5, step=0.05,
         key="upbeat_factor",
-        help="How much higher the upbeats ring than the downbeats "
-             "(1.05 = barely, 3.0 = very high).",
+        help="How high the 'and' between beats rings relative to the beats "
+             "(1.05 = barely higher, 3.0 = very high).",
     )
 cycle_accent = st.sidebar.radio(
     "Cycle start indicator",
