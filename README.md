@@ -27,11 +27,11 @@ fundamental, so you hear the metaphor, not just the beat.
   each layer is quieter and pitched at its own harmonic.
 - **Rich, configurable sound.** Pitched beeps or synthesized drums,
   a separate low-downbeat/cycle-start accent ("deep drum" or "high chime"),
-  a gentle per-meter pitch mapping, an optional "raise upbeats" setting,
-  and an optional "waves under the clicks" mode where each beat's audible
-  swell rings at that pulse's own frequency — downbeats at the meter pitch
-  and upbeats at their raised pitch — so every wave names the pulse it leads
-  into.
+  an optional "raise upbeats" setting, and an optional "waves under the
+  clicks" mode where each beat's audible swell rings at that pulse's own
+  frequency. The pyramid's *selection order* is the perspective: the first
+  meter you pick is the foundation — lowest and slightly louder — and each
+  later pick perches one rung higher.
 - **Seamless looping.** Every cycle loops cleanly into the next, with
   configurable repetition counts for longer listening buffers.
 - **Stereo spread.** Split the base pyramid across left/right channels to

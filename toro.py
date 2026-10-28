@@ -120,16 +120,18 @@ def add_wrapped(track, click, start_idx, sr=SR):
     return track
 
 
-def _add_wave(track, meter, start, end, base_freq, sr=SR, amp=1.0):
+def _add_wave(track, meter, start, end, base_freq, sr=SR, amp=1.0, rank=None):
     """Mix the audible phase-locked waves under the clicks, one swell per beat,
     each pitched at that beat's *own* pulse frequency: the swell into a downbeat
-    rings at the meter's pitch, and (when the upbeats are raised) the swell into
-    an upbeat rings at the raised pitch — so each wave names the pulse it leads
-    into. Every swell rises from silence in the trough after the previous click,
-    peaks at its click, and sinks back to silence, so beats meet at zeros and the
-    loop stays seamless without any phase bookkeeping. `amp` scales how loud the
-    waves are; fractal layers pass their own amplitude down, so deeper layers
-    swell quieter, exactly like their clicks.
+    rings at the pitch of the meter's (rank-keyed) position, and (when the
+    upbeats are raised) the swell into an upbeat rings at the raised pitch — so
+    each wave names the pulse it leads into. Every swell rises from silence in the
+    trough after the previous click, peaks at its click, and sinks back to
+    silence, so beats meet at zeros and the loop stays seamless. `amp` scales
+    how loud the waves are; fractal layers pass their own amplitude down, so
+    deeper layers swell quieter, exactly like their clicks. `rank` (position in
+    the selection order) keys the pitch; when omitted the meter's own number
+    does.
     """
     span = end - start
     n = len(track)
@@ -141,7 +143,7 @@ def _add_wave(track, meter, start, end, base_freq, sr=SR, amp=1.0):
         center = int(tb * sr)             # the click's own sample
         t = np.linspace(tb - half, tb + half, width, endpoint=False)
         env = (1.0 + np.cos(2 * np.pi * (t - tb) * sr / beat_sr)) / 2.0
-        tone = np.sin(2 * np.pi * beat_freq(meter, base_freq, k) * (t - tb))
+        tone = np.sin(2 * np.pi * beat_freq(meter, base_freq, k, rank) * (t - tb))
         seg = amp * tone * env
         a = (center - width // 2) % n
         i1 = min(a + width, n)
@@ -151,14 +153,20 @@ def _add_wave(track, meter, start, end, base_freq, sr=SR, amp=1.0):
     return track
 
 
-def meter_freq(n, base_freq):
-    """Map a meter to its drum frequency, ascending gently with compression.
+def meter_freq(n, base_freq, rank=None):
+    """Map a meter — or a *position in the selection order* — to its drum
+    frequency, ascending gently with compression. `rank` is the meter's position
+    in the selection order (1 = the first-picked foundation), so the pitch
+    follows the user's chosen perspective; when omitted, the meter's own number
+    keys the pitch.
 
     Strict harmonics (`base_freq * n`) leap a full overtone per meter and climb
     too fast for low drums. Instead, low meters stay close together and the
     climb softens as we ascend, so the base of the pyramid sits low while
     keeping a rising, still-distinct pitch per meter.
     """
+    if rank is not None:
+        n = rank
     return base_freq * (1 + 0.65 * (n - 1) ** 0.8)
 
 
@@ -166,34 +174,34 @@ def meter_freq(n, base_freq):
 # holds the live values: enable_upbeats (bool) and upbeat_factor (float).
 DEFAULT_UPBEAT_FACTOR = 1.5
 
-# Default for the "waves under the clicks" option (see sidebar widgets).
-# Session state holds: waves (bool) and wave_amp (float).
-DEFAULT_WAVE_AMP = 0.4
 
-
-def beat_freq(n, base_freq, beat_index):
+def beat_freq(n, base_freq, beat_index, rank=None):
     """Pitch of one beat of a meter, optionally raising the upbeats.
 
     `beat_index` is 0-based: the 1st/3rd/5th... beats (index 0, 2, 4... — the
     downbeats) ring at the meter's own pitch. When enabled, the 2nd/4th/6th...
     beats (index 1, 3, 5... — the upbeats) ring `upbeat_factor` higher.
 
-    Reads the toggle and factor from `st.session_state`, so it's configurable
-    from the sidebar.
+    `rank` is the meter's *position in the selection order*: rank 1 is the
+    foundation (lowest rung), rank 2 the next, and so on; when omitted the
+    meter's own number keys the pitch. Reads the toggle and factor from
+    `st.session_state`, so it's configurable from the sidebar.
     """
-    freq = meter_freq(n, base_freq)
+    freq = meter_freq(n, base_freq, rank)
     if st.session_state.get("enable_upbeats", False) and beat_index % 2 == 1:
         factor = st.session_state.get("upbeat_factor", DEFAULT_UPBEAT_FACTOR)
         freq *= factor
     return freq
 
 
-def render_meter_track(n, cycle_len, base_freq, sr=SR):
-    """n evenly spaced clicks across one cycle, pitched at the nth harmonic.
+def render_meter_track(n, cycle_len, base_freq, sr=SR, rank=None):
+    """n evenly spaced clicks across one cycle, pitched by its *position in the
+    selection order*: rank 1 (the first-picked meter) is the foundation and rings
+    the lowest pitch, rank 2 the next, and so on — so the user's selection order
+    sets the perspective. Calls without a `rank` keep the meter's own number.
 
-    Downbeats (the odd 1st/3rd/5th... beats) ring at the meter's base pitch,
-    while upbeats (the even 2nd/4th/6th...) ring a raised pitch, so the two are
-    easy to tell apart.
+    Downbeats ring at the (rank-keyed) base pitch, while upbeats (the even
+    2nd/4th/6th...) ring a raised pitch, so the two are easy to tell apart.
 
     Returns a single cycle built to loop seamlessly: a click that would
     overhang the end of the cycle is wrapped back onto the start, so the
@@ -204,20 +212,33 @@ def render_meter_track(n, cycle_len, base_freq, sr=SR):
     track = np.zeros(total)
     positions = np.linspace(0, cycle_len, n, endpoint=False)
     for i, p in enumerate(positions):
-        freq = beat_freq(n, base_freq, i)
+        freq = beat_freq(n, base_freq, i, rank)
         click = make_click(freq, sr=sr)
         add_wrapped(track, click, int(p * sr))
     if st.session_state.get("waves", False):
         wave_amp = st.session_state.get("wave_amp", DEFAULT_WAVE_AMP)
-        _add_wave(track, n, 0.0, cycle_len, base_freq, sr=sr, amp=wave_amp)
+        _add_wave(track, n, 0.0, cycle_len, base_freq, sr=sr, amp=wave_amp, rank=rank)
     return track
 
 
+# Default for the "waves under the clicks" option (see sidebar widgets).
+# Session state holds: waves (bool) and wave_amp (float).
+DEFAULT_WAVE_AMP = 0.4
+
+# The first-picked meter is the *foundation*: as well as ringing the lowest
+# pitch, it is mixed slightly louder so it leads the polyrhythm rather than
+# competing with it.
+BASIS_GAIN = 1.35
+
+
 def render_meter_mix(meters, cycle_len, base_freq, sr=SR):
-    """Mix the given meters into one (mono) cycle, adding the cycle accent."""
+    """Mix the given meters into one (mono) cycle, adding the cycle accent. The
+    first-picked meter is the foundation: it keeps the lowest pitch and a slight
+    loudness boost (BASIS_GAIN), so it leads the polyrhythm."""
     cycle = np.zeros(int(cycle_len * sr))
-    for n in meters:
-        cycle += render_meter_track(n, cycle_len, base_freq, sr=sr)
+    for idx, n in enumerate(meters):
+        gain = BASIS_GAIN if idx == 0 else 1.0
+        cycle += render_meter_track(n, cycle_len, base_freq, sr=sr, rank=idx + 1) * gain
     add_cycle_accent(cycle, sr=sr)
     return cycle
 
@@ -232,6 +253,10 @@ def _normalize(cycle):
 def render_combined(meters, cycle_len, base_freq, sr=SR):
     """Render the base pyramid into one cycle.
 
+    The selection *order* is the perspective: `meters` is used in the order it is
+    given, each position setting that meter's rank — the first-picked meter is the
+    foundation (lowest pitch), the next the one after, and so on.
+
     Returns a mono array by default. When `st.session_state["stereo"]` is set,
     the meters are split across two channels (half on the left, half on the
     right) and the result is a stereo array of shape `(2, N)`; the cycle-start
@@ -240,7 +265,7 @@ def render_combined(meters, cycle_len, base_freq, sr=SR):
     if not st.session_state.get("stereo", False):
         return _normalize(render_meter_mix(meters, cycle_len, base_freq, sr=sr))
 
-    ordered = sorted(meters)
+    ordered = list(meters)
     if len(ordered) < 2:
         left = render_meter_mix(ordered, cycle_len, base_freq, sr=sr)
         return np.vstack([left, left])
@@ -554,7 +579,8 @@ st.markdown(
 
 default_meters = [2, 3]
 chosen = st.multiselect(
-    "Active meters (each played as clicks + its own pitch = nth harmonic)",
+    "Active meters (the first you pick is the foundation; each later pick perches "
+    "one rung higher, by selection order)",
     options=list(range(1, 10)),
     default=default_meters,
 )
@@ -566,9 +592,10 @@ if st.button("Play selected pyramid", type="primary"):
         play_looped(render_combined(chosen, cycle_len, base_freq), num_cycles)
         st.pyplot(draw_timeline(chosen, cycle_len))
         st.caption(
-            f"Meters {', '.join(map(str, sorted(chosen)))} all fill the same "
+            f"Meters {', '.join(map(str, chosen))} all fill the same "
             f"{cycle_len:.2f}s cycle, each subdividing it into that many "
-            "equal parts and sounding at that harmonic pitch."
+            "equal parts; the first you picked is the foundation — lowest and "
+            "slightly louder — and each later pick is pitched one rung higher."
         )
 
 st.divider()

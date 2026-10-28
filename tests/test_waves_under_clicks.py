@@ -84,3 +84,25 @@ def test_render_node_scales_wave_with_node_amplitude():
     track2 = np.zeros(1000)
     toro.render_node(toro.Node(2), 0.0, 1.0, 40, 0.6, 1.0, track2, 1000)
     assert abs(track2[125]) > abs(track[125])  # amp 1.0 (0.2) swells louder than amp 0.5 (0.1)
+
+
+# --- selection order = the perspective ----------------------------------------
+
+def test_rank_keys_pitch_higher_for_later_selections():
+    low = np.zeros(3000)
+    toro._add_wave(low, 3, 0.0, 3.0, 40, rank=1, sr=1000, amp=0.4)
+    high = np.zeros(3000)
+    toro._add_wave(high, 3, 0.0, 3.0, 40, rank=3, sr=1000, amp=0.4)
+    def crossings(x):
+        return int(np.sum(np.diff(np.sign(x)) != 0))
+    # A later rank means a higher rung on the pitch ladder: the rank-3 wave crosses
+    # clearly more tone-cycles per swell than the rank-1 wave over the same outline.
+    assert crossings(high[1200:1800]) > 1.2 * crossings(low[1200:1800])
+
+
+def test_first_selection_sounds_louder_than_the_same_meter_second():
+    st.session_state["waves"] = True
+    first = toro.render_meter_mix([5, 3], 2.0, 40, sr=1000)   # 5 entered first: the foundation
+    second = toro.render_meter_mix([3, 5], 2.0, 40, sr=1000)  # 5 entered second
+    i = int(1.9 * 1000)  # a sample away from every click, so this is wave-only
+    assert abs(first[i]) > abs(second[i])
