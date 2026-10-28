@@ -62,7 +62,31 @@ def test_upbeat_wave_pitches_higher_like_the_upbeat_pulse():
     st.session_state["enable_upbeats"] = False
 
 
-# --- render integration (wired through st.session_state) ----------------------
+def test_render_node_keys_pitch_by_selection_order():
+    st.session_state["waves"] = True
+    lo = np.zeros(3000)
+    toro.render_node(toro.Node(3, rank=1), 0.0, 3.0, 40, 0.6, 1.0, lo, 1000)
+    hi = np.zeros(3000)
+    toro.render_node(toro.Node(3, rank=3), 0.0, 3.0, 40, 0.6, 1.0, hi, 1000)
+    def crossings(x):
+        return int(np.sum(np.diff(np.sign(x)) != 0))
+    # The recursed sub-patterns share the same selection order at every depth, so
+    # a node at a higher rank rings at a higher rung of the pitch ladder.
+    assert crossings(hi[1200:1800]) > 1.2 * crossings(lo[1200:1800])
+
+def test_build_fractal_ranks_by_selection_order_at_every_depth():
+    roots = toro.build_fractal([3, 2], 2, {3: {0}, 2: {0}})
+    def walk(node, out):
+        out.append((node.meter, node.rank))
+        for p in node.patterns:
+            walk(p, out)
+    pairs = []
+    for root in roots:
+        walk(root, pairs)
+    # "Order at every depth": the base picked first (3) is the foundation (rank
+    # 1) at the root *and* inside every recursion — the later pick (2) always
+    # perches one rung higher, never the meter's own number.
+    assert set(pairs) == {(3, 1), (2, 2)}
 
 def test_render_meter_track_silent_between_beats_when_disabled():
     st.session_state["waves"] = False

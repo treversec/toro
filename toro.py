@@ -286,16 +286,17 @@ def render_combined(meters, cycle_len, base_freq, sr=SR):
 # and it may carry a *sub-pattern* that plays over every one of its beats.
 # So "3/2 on top of the 2" is a 2-base with a 3/2 pattern (a 3-base carrying a
 # 2) layered over each of its beats. Every level's own meter always sounds;
-# sub-patterns are quieter and pitched at their own harmonic, so the layers
-# read like overtones nested at a smaller scale.
+# sub-patterns are quieter; pitch follows the base selection order (first base
+# picked = foundation) at every nesting depth.
 
 class Node:
     """One pattern: `meter` clicks, plus a *combination* of sub-patterns played
     over some of those clicks (arbitrarily deep). `on` is the set of beat
     indices (0-based) whose pulse carries the sub-patterns; empty `on` or empty
     `patterns` means "no sub-layer on any beat"."""
-    def __init__(self, meter, patterns=None, on=None):
+    def __init__(self, meter, patterns=None, on=None, rank=None):
         self.meter = meter
+        self.rank = rank
         self.patterns = patterns if patterns is not None else []
         self.on = set(on) if on is not None else set()
 
@@ -324,10 +325,10 @@ def render_node(node, start, end, base_freq, amp_scale, amp, track, sr):
     step = span / node.meter
     if st.session_state.get("waves", False):
         wave_amp = st.session_state.get("wave_amp", DEFAULT_WAVE_AMP)
-        _add_wave(track, node.meter, start, end, base_freq, sr=sr, amp=amp * wave_amp)
+        _add_wave(track, node.meter, start, end, base_freq, sr=sr, amp=amp * wave_amp, rank=node.rank)
     for i in range(node.meter):
         t = start + i * step
-        click = make_click(beat_freq(node.meter, base_freq, i), sr=sr)
+        click = make_click(beat_freq(node.meter, base_freq, i, node.rank), sr=sr)
         add_wrapped(track, click * amp, int(t * sr))
         if i in node.on:
             for child in node.patterns:
@@ -340,7 +341,9 @@ def render_forest(roots, cycle_len, base_freq, amp_scale=0.6, sr=SR,
     """Render a list of root patterns (the base pyramid) into one cycle.
 
     Each root is a `Node`. All meters at all depths sound; sub-patterns are
-    quieter (`amp_scale` per level) and pitched at their own harmonic. When
+    quieter (`amp_scale` per level), and pitch follows the root selection order
+    (first picked = foundation, lowest and slightly louder) down every level.
+    When
     `accent` is on, the cycle-start indicator (where all beats intersect at
     t=0) is added per the selected cycle-accent option.
     """
@@ -631,8 +634,10 @@ st.markdown(
     "the recursion — the 2-beats, the 3-beats, or both. A **nesting depth** "
     "slider sets how many layers deep it recurs: depth 1 plays the base "
     "polyrhythm once inside each chosen beat, depth 2 repeats it inside those, "
-    "and so on. All meters always sound; layers are quieter and pitched at "
-    "their own harmonic."
+    "and so on. All meters always sound; layers are quieter, and the pitch "
+    "follows the same selection order as the pyramid — the first base you pick "
+    "is the foundation of every layer, and each later base perches one rung "
+    "higher, at every nesting depth."
 )
 
 amp_scale = st.slider("Layer amplitude scaling (per nested level)",
@@ -651,13 +656,15 @@ def build_fractal(bases, depth, on_by_meter):
     layers are nested. The same relative pulse choices (`on`) are carried down
     each level, so deeper recursion fractalizes the same beats proportionally.
     """
-    bases = sorted(bases)
+    bases = bases if bases else []
 
     def build(meter, d, on):
-        node = Node(meter, on=on)
+        node = Node(meter, on=on, rank=order[meter])
         if d > 0 and bases:
             node.patterns = [build(b, d - 1, on) for b in bases]
         return node
+
+    order = {b: i + 1 for i, b in enumerate(bases)}
 
     return [build(b, depth, on_by_meter.get(b, set())) for b in bases]
 
@@ -711,23 +718,50 @@ st.markdown(
 if not chosen_bases:
     st.warning("Select at least one base meter first.")
 
-if st.button("Play fractal loop", type="primary"):
-    if not chosen_bases:
-        st.warning("Select at least one base meter first.")
-    elif n_nodes > 4000:
-        st.warning(
-            f"Depth {depth} with meters {chosen_bases} builds {n_nodes} "
-            "pulses — too many to render clearly. Reduce depth or base meters."
-        )
-    else:
-        play_looped(render_forest(roots, cycle_len, base_freq,
-                                  amp_scale=amp_scale), num_cycles)
-        st.pyplot(draw_forest(roots, cycle_len))
-        st.caption(
-            "Base polyrhythm: "
-            + ", ".join(map(str, chosen_bases))
-            + f" over the {cycle_len:.2f}s cycle, nested {depth} level(s) "
-            "deep on the selected pulses; each level is quieter and pitched "
-            "at its own harmonic."
-        )
+fractal_col, fractal_flip_col = st.columns(2)
+
+with fractal_col:
+    if st.button("Play fractal loop", type="primary"):
+        if not chosen_bases:
+            st.warning("Select at least one base meter first.")
+        elif n_nodes > 4000:
+            st.warning(
+                f"Depth {depth} with meters {chosen_bases} builds {n_nodes} "
+                "pulses — too many to render clearly. Reduce depth or base meters."
+            )
+        else:
+            play_looped(render_forest(roots, cycle_len, base_freq,
+                                      amp_scale=amp_scale), num_cycles)
+            st.pyplot(draw_forest(roots, cycle_len))
+            st.caption(
+                "Base polyrhythm: "
+                + ", ".join(map(str, chosen_bases))
+                + f" over the {cycle_len:.2f}s cycle, nested {depth} level(s) "
+                "deep on the selected pulses; each level is quieter, and the "
+                "first base you picked is the foundation — lowest and slightly "
+                "louder — with each later base one rung higher, at every depth."
+            )
+
+with fractal_flip_col:
+    if st.button("Play reversed (last picked first)"):
+        if not chosen_bases:
+            st.warning("Select at least one base meter first.")
+        else:
+            flipped = list(reversed(chosen_bases))
+            flipped_roots = build_fractal(flipped, depth, on_by_meter)
+            if count_nodes(flipped_roots) > 4000:
+                st.warning(
+                    f"Depth {depth} with meters {flipped} builds "
+                    f"{count_nodes(flipped_roots)} pulses — too many to render "
+                    "clearly. Reduce depth or base meters."
+                )
+            else:
+                play_looped(render_forest(flipped_roots, cycle_len, base_freq,
+                                          amp_scale=amp_scale), num_cycles)
+                st.pyplot(draw_forest(flipped_roots, cycle_len))
+                st.caption(
+                    f"Selection played the other way around: **{flipped[0]}** is "
+                    "now the foundation (lowest and slightly louder) of every "
+                    "layer, and the rest perch one rung higher in the new order."
+                )
 
