@@ -585,18 +585,34 @@ chosen = st.multiselect(
     default=default_meters,
 )
 
-if st.button("Play selected pyramid", type="primary"):
-    if not chosen:
-        st.warning("Select at least one meter first.")
-    else:
-        play_looped(render_combined(chosen, cycle_len, base_freq), num_cycles)
-        st.pyplot(draw_timeline(chosen, cycle_len))
-        st.caption(
-            f"Meters {', '.join(map(str, chosen))} all fill the same "
-            f"{cycle_len:.2f}s cycle, each subdividing it into that many "
-            "equal parts; the first you picked is the foundation — lowest and "
-            "slightly louder — and each later pick is pitched one rung higher."
-        )
+choose_col, flip_col = st.columns(2)
+
+with choose_col:
+    if st.button("Play selected pyramid", type="primary"):
+        if not chosen:
+            st.warning("Select at least one meter first.")
+        else:
+            play_looped(render_combined(chosen, cycle_len, base_freq), num_cycles)
+            st.pyplot(draw_timeline(chosen, cycle_len))
+            st.caption(
+                f"Meters {', '.join(map(str, chosen))} all fill the same "
+                f"{cycle_len:.2f}s cycle, each subdividing it into that many "
+                "equal parts; the first you picked is the foundation — lowest and "
+                "slightly louder — and each later pick is pitched one rung higher."
+            )
+
+with flip_col:
+    if st.button("Play reversed (last picked first)"):
+        if not chosen:
+            st.warning("Select at least one meter first.")
+        else:
+            flipped = list(reversed(chosen))
+            play_looped(render_combined(flipped, cycle_len, base_freq), num_cycles)
+            st.pyplot(draw_timeline(flipped, cycle_len))
+            st.caption(
+                f"Selection played the other way around: **{flipped[0]}** is "
+                "now the foundation (lowest and slightly louder)."
+            )
 
 st.divider()
 st.markdown(

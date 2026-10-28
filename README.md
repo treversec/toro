@@ -31,7 +31,8 @@ fundamental, so you hear the metaphor, not just the beat.
   clicks" mode where each beat's audible swell rings at that pulse's own
   frequency. The pyramid's *selection order* is the perspective: the first
   meter you pick is the foundation — lowest and slightly louder — and each
-  later pick perches one rung higher.
+  later pick perches one rung higher; a paired **Play reversed** button
+  flips it in one tap for instant before/after perspective.
 - **Seamless looping.** Every cycle loops cleanly into the next, with
   configurable repetition counts for longer listening buffers.
 - **Stereo spread.** Split the base pyramid across left/right channels to
