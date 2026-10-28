@@ -605,7 +605,7 @@ with choose_col:
             )
 
 with flip_col:
-    if st.button("Play reversed (last picked first)"):
+    if st.button("Play reversed (last picked first)", key="pyramid_reversed"):
         if not chosen:
             st.warning("Select at least one meter first.")
         else:
@@ -743,7 +743,7 @@ with fractal_col:
             )
 
 with fractal_flip_col:
-    if st.button("Play reversed (last picked first)"):
+    if st.button("Play reversed (last picked first)", key="fractal_reversed"):
         if not chosen_bases:
             st.warning("Select at least one base meter first.")
         else:
