@@ -120,6 +120,37 @@ def add_wrapped(track, click, start_idx, sr=SR):
     return track
 
 
+def _add_wave(track, meter, start, end, base_freq, sr=SR, amp=1.0):
+    """Mix the audible phase-locked waves under the clicks, one swell per beat,
+    each pitched at that beat's *own* pulse frequency: the swell into a downbeat
+    rings at the meter's pitch, and (when the upbeats are raised) the swell into
+    an upbeat rings at the raised pitch — so each wave names the pulse it leads
+    into. Every swell rises from silence in the trough after the previous click,
+    peaks at its click, and sinks back to silence, so beats meet at zeros and the
+    loop stays seamless without any phase bookkeeping. `amp` scales how loud the
+    waves are; fractal layers pass their own amplitude down, so deeper layers
+    swell quieter, exactly like their clicks.
+    """
+    span = end - start
+    n = len(track)
+    beat_sr = span / meter * sr           # samples from one trough to the next
+    width = int(beat_sr)
+    half = beat_sr / (2 * sr)             # seconds from a beat to its troughs
+    for k in range(meter):
+        tb = start + k * span / meter     # the click this swell leads into
+        center = int(tb * sr)             # the click's own sample
+        t = np.linspace(tb - half, tb + half, width, endpoint=False)
+        env = (1.0 + np.cos(2 * np.pi * (t - tb) * sr / beat_sr)) / 2.0
+        tone = np.sin(2 * np.pi * beat_freq(meter, base_freq, k) * (t - tb))
+        seg = amp * tone * env
+        a = (center - width // 2) % n
+        i1 = min(a + width, n)
+        track[a:i1] += seg[:i1 - a]
+        if a + width > n:
+            track[: a + width - n] += seg[i1 - a:]
+    return track
+
+
 def meter_freq(n, base_freq):
     """Map a meter to its drum frequency, ascending gently with compression.
 
@@ -134,6 +165,10 @@ def meter_freq(n, base_freq):
 # Defaults for the "raise upbeats" option (see sidebar widgets). Session state
 # holds the live values: enable_upbeats (bool) and upbeat_factor (float).
 DEFAULT_UPBEAT_FACTOR = 1.5
+
+# Default for the "waves under the clicks" option (see sidebar widgets).
+# Session state holds: waves (bool) and wave_amp (float).
+DEFAULT_WAVE_AMP = 0.4
 
 
 def beat_freq(n, base_freq, beat_index):
@@ -172,6 +207,9 @@ def render_meter_track(n, cycle_len, base_freq, sr=SR):
         freq = beat_freq(n, base_freq, i)
         click = make_click(freq, sr=sr)
         add_wrapped(track, click, int(p * sr))
+    if st.session_state.get("waves", False):
+        wave_amp = st.session_state.get("wave_amp", DEFAULT_WAVE_AMP)
+        _add_wave(track, n, 0.0, cycle_len, base_freq, sr=sr, amp=wave_amp)
     return track
 
 
@@ -259,6 +297,9 @@ def render_node(node, start, end, base_freq, amp_scale, amp, track, sr):
     """
     span = end - start
     step = span / node.meter
+    if st.session_state.get("waves", False):
+        wave_amp = st.session_state.get("wave_amp", DEFAULT_WAVE_AMP)
+        _add_wave(track, node.meter, start, end, base_freq, sr=sr, amp=amp * wave_amp)
     for i in range(node.meter):
         t = start + i * step
         click = make_click(beat_freq(node.meter, base_freq, i), sr=sr)
@@ -421,6 +462,22 @@ sound = st.sidebar.radio(
     index=0,
     key="sound",
 )
+st.sidebar.toggle(
+    "Waves under the clicks",
+    value=st.session_state.get("waves", False),
+    key="waves",
+    help="Hear each meter's wave audibly: a pitched tone that breathes beneath "
+         "the clicks — full loudness at each beat, sinking to silence in the "
+         "trough — so the rise and fall of every wave is heard, not just the "
+         "crest where the click sits.",
+)
+if st.session_state.get("waves", False):
+    st.sidebar.slider(
+        "Wave volume",
+        min_value=0.0, max_value=1.0, value=DEFAULT_WAVE_AMP, step=0.05,
+        key="wave_amp",
+        help="How loud the underlying wave is relative to the clicks.",
+    )
 st.sidebar.toggle(
     "Raise upbeats (even beats) in pitch",
     value=st.session_state.get("enable_upbeats", False),
