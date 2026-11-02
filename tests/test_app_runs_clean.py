@@ -22,3 +22,14 @@ def test_ands_are_on_by_default():
     app.run()
     assert app.toggle(key="enable_upbeats").value is True
     assert len(app.exception) == 0
+
+
+def test_accent_radios_default_to_first_pick_and_rerun_cleanly():
+    app = AppTest.from_file(APP, default_timeout=30)
+    app.run()
+    assert app.radio(key="pyramid_accent").value == 2   # first-picked meter leads
+    assert app.radio(key="fractal_accent").value == 2  # first-picked base leads
+    app.radio(key="pyramid_accent").set_value(3)
+    app.radio(key="fractal_accent").set_value(3)
+    app.run()
+    assert len(app.exception) == 0

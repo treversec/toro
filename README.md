@@ -24,19 +24,16 @@ fundamental, so you hear the metaphor, not just the beat.
 - **Section 3 — Rhythm fractals.** Layer full patterns on top of other
   patterns: pick the base polyrhythm, choose which beats carry the
   recursion, and nest it as deep as 4 levels. Every meter always sounds;
-  each layer is quieter, and pitch follows your base *selection order* at
-  every nesting depth — the first base you pick is the foundation of the
-  whole structure — with a paired **Play reversed** button for the instant
-  flip.
+  each layer is quieter, and a radio picks the **accent base** — the
+  foundation of the whole structure — with the rest following your base
+  *selection order* at every nesting depth.
 - **Rich, configurable sound.** Pitched beeps or synthesized drums,
   a separate low-downbeat/cycle-start accent ("deep drum" or "high chime"),
   the "and" between each beat (on by default), and an optional "waves under the
   clicks" mode where each beat's audible swell rings at that pulse's own
-  frequency. The *selection order* is the perspective — in the pyramid and in
-  the fractals alike: the first meter you pick is the foundation — lowest and
-  slightly louder — and each later pick perches one rung higher; a paired
-  **Play reversed** button flips it in one tap for instant before/after
-  perspective.
+  frequency. The *accent* is the perspective — in the pyramid and in the
+  fractals alike: a radio picks which meter is the foundation — lowest and
+  slightly louder — and each later pick perches one rung higher after it.
 - **Seamless looping.** Every cycle loops cleanly into the next, with
   configurable repetition counts for longer listening buffers.
 - **Stereo spread.** Split the base pyramid across left/right channels to

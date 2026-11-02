@@ -258,6 +258,12 @@ DEFAULT_WAVE_AMP = 0.4
 BASIS_GAIN = 1.35
 
 
+def lead_with(chosen, accent):
+    """Order a perspective: the accent meter first (the foundation — lowest rung,
+    slightly louder), the rest keeping their selection order after it."""
+    return [accent] + [m for m in chosen if m != accent]
+
+
 def render_meter_mix(meters, cycle_len, base_freq, sr=SR):
     """Mix the given meters into one (mono) cycle, adding the cycle accent. The
     first-picked meter is the foundation: it keeps the lowest pitch and a slight
@@ -612,39 +618,35 @@ st.markdown(
 
 default_meters = [2, 3]
 chosen = st.multiselect(
-    "Active meters (the first you pick is the foundation; each later pick perches "
-    "one rung higher, by selection order)",
+    "Active meters (pick the accent below to choose who leads)",
     options=list(range(1, 10)),
     default=default_meters,
 )
 
-choose_col, flip_col = st.columns(2)
+choose_col, accent_col = st.columns(2)
+
+with accent_col:
+    if chosen:
+        accent = st.radio(
+            "Accent meter (the foundation — lowest and slightly louder)",
+            options=list(chosen),
+            key="pyramid_accent",
+        )
 
 with choose_col:
     if st.button("Play selected pyramid", type="primary"):
         if not chosen:
             st.warning("Select at least one meter first.")
         else:
-            play_looped(render_combined(chosen, cycle_len, base_freq), num_cycles)
-            st.pyplot(draw_timeline(chosen, cycle_len))
+            ordered = lead_with(chosen, accent)
+            play_looped(render_combined(ordered, cycle_len, base_freq), num_cycles)
+            st.pyplot(draw_timeline(ordered, cycle_len))
             st.caption(
                 f"Meters {', '.join(map(str, chosen))} all fill the same "
                 f"{cycle_len:.2f}s cycle, each subdividing it into that many "
-                "equal parts; the first you picked is the foundation — lowest and "
-                "slightly louder — and each later pick is pitched one rung higher."
-            )
-
-with flip_col:
-    if st.button("Play reversed (last picked first)", key="pyramid_reversed"):
-        if not chosen:
-            st.warning("Select at least one meter first.")
-        else:
-            flipped = list(reversed(chosen))
-            play_looped(render_combined(flipped, cycle_len, base_freq), num_cycles)
-            st.pyplot(draw_timeline(flipped, cycle_len))
-            st.caption(
-                f"Selection played the other way around: **{flipped[0]}** is "
-                "now the foundation (lowest and slightly louder)."
+                "equal parts; the accent — "
+                f"**{accent}** — is the foundation, lowest and slightly "
+                "louder, and the rest follow in your selection order above it."
             )
 
 st.divider()
@@ -664,10 +666,9 @@ st.markdown(
     "the recursion — the 2-beats, the 3-beats, or both. A **nesting depth** "
     "slider sets how many layers deep it recurs: depth 1 plays the base "
     "polyrhythm once inside each chosen beat, depth 2 repeats it inside those, "
-    "and so on. All meters always sound; layers are quieter, and the pitch "
-    "follows the same selection order as the pyramid — the first base you pick "
-    "is the foundation of every layer, and each later base perches one rung "
-    "higher, at every nesting depth."
+    "and so on. All meters always sound; layers are quieter, and a radio picks "
+    "the **accent base** — the foundation of every layer, lowest and slightly "
+    "louder — with the rest following in your selection order at every depth."
 )
 
 amp_scale = st.slider("Layer amplitude scaling (per nested level)",
@@ -748,50 +749,40 @@ st.markdown(
 if not chosen_bases:
     st.warning("Select at least one base meter first.")
 
-fractal_col, fractal_flip_col = st.columns(2)
+fractal_col, fractal_accent_col = st.columns(2)
+
+with fractal_accent_col:
+    if chosen_bases:
+        accent_base = st.radio(
+            "Accent base (the foundation of every layer)",
+            options=list(chosen_bases),
+            key="fractal_accent",
+        )
 
 with fractal_col:
     if st.button("Play fractal loop", type="primary"):
         if not chosen_bases:
             st.warning("Select at least one base meter first.")
-        elif n_nodes > 4000:
-            st.warning(
-                f"Depth {depth} with meters {chosen_bases} builds {n_nodes} "
-                "pulses — too many to render clearly. Reduce depth or base meters."
-            )
         else:
-            play_looped(render_forest(roots, cycle_len, base_freq,
-                                      amp_scale=amp_scale), num_cycles)
-            st.pyplot(draw_forest(roots, cycle_len))
-            st.caption(
-                "Base polyrhythm: "
-                + ", ".join(map(str, chosen_bases))
-                + f" over the {cycle_len:.2f}s cycle, nested {depth} level(s) "
-                "deep on the selected pulses; each level is quieter, and the "
-                "first base you picked is the foundation — lowest and slightly "
-                "louder — with each later base one rung higher, at every depth."
-            )
-
-with fractal_flip_col:
-    if st.button("Play reversed (last picked first)", key="fractal_reversed"):
-        if not chosen_bases:
-            st.warning("Select at least one base meter first.")
-        else:
-            flipped = list(reversed(chosen_bases))
-            flipped_roots = build_fractal(flipped, depth, on_by_meter)
-            if count_nodes(flipped_roots) > 4000:
+            ordered_bases = lead_with(chosen_bases, accent_base)
+            ordered_roots = build_fractal(ordered_bases, depth, on_by_meter)
+            if count_nodes(ordered_roots) > 4000:
                 st.warning(
-                    f"Depth {depth} with meters {flipped} builds "
-                    f"{count_nodes(flipped_roots)} pulses — too many to render "
+                    f"Depth {depth} with meters {ordered_bases} builds "
+                    f"{count_nodes(ordered_roots)} pulses — too many to render "
                     "clearly. Reduce depth or base meters."
                 )
             else:
-                play_looped(render_forest(flipped_roots, cycle_len, base_freq,
+                play_looped(render_forest(ordered_roots, cycle_len, base_freq,
                                           amp_scale=amp_scale), num_cycles)
-                st.pyplot(draw_forest(flipped_roots, cycle_len))
+                st.pyplot(draw_forest(ordered_roots, cycle_len))
                 st.caption(
-                    f"Selection played the other way around: **{flipped[0]}** is "
-                    "now the foundation (lowest and slightly louder) of every "
-                    "layer, and the rest perch one rung higher in the new order."
+                    "Base polyrhythm: "
+                    + ", ".join(map(str, chosen_bases))
+                    + f" over the {cycle_len:.2f}s cycle, nested {depth} level(s) "
+                    "deep on the selected pulses; the accent — "
+                    f"**{accent_base}** — is the foundation of every layer, "
+                    "lowest and slightly louder, and the rest follow in your "
+                    "selection order above it."
                 )
 

@@ -162,6 +162,12 @@ def test_rank_keys_pitch_higher_for_later_selections():
     assert crossings(high[1200:1800]) > 1.2 * crossings(low[1200:1800])
 
 
+def test_lead_with_puts_the_accent_first_keeping_selection_order():
+    assert toro.lead_with([5, 3, 2], 3) == [3, 5, 2]
+    assert toro.lead_with([5, 3, 2], 5) == [5, 3, 2]  # first-picked accent: unchanged
+    assert toro.lead_with([2], 2) == [2]
+
+
 def test_first_selection_sounds_louder_than_the_same_meter_second():
     st.session_state["enable_upbeats"] = False
     st.session_state["waves"] = True
