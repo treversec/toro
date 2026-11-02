@@ -15,3 +15,10 @@ def test_app_runs_without_exceptions():
     app = AppTest.from_file(APP, default_timeout=30)
     app.run()
     assert len(app.exception) == 0
+
+
+def test_ands_are_on_by_default():
+    app = AppTest.from_file(APP, default_timeout=30)
+    app.run()
+    assert app.toggle(key="enable_upbeats").value is True
+    assert len(app.exception) == 0

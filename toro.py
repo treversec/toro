@@ -139,7 +139,7 @@ def _add_wave(track, meter, start, end, base_freq, sr=SR, amp=1.0, rank=None):
     beat_sr = span / meter * sr           # samples from one trough to the next
     width = int(beat_sr)
     half = beat_sr / (2 * sr)             # seconds from a beat to its troughs
-    if st.session_state.get("enable_upbeats", False):
+    if st.session_state.get("enable_upbeats", DEFAULT_UPBEATS):
         period = span / meter             # one swell per beat-interval
         f0 = meter_freq(meter, base_freq, rank)
         f_and = and_freq(meter, base_freq, rank)
@@ -190,6 +190,7 @@ def meter_freq(n, base_freq, rank=None):
 
 # Defaults for the "Play 'and' between each beat" option (see sidebar widgets).
 # Session state holds the live values: enable_upbeats (bool) and upbeat_factor (float).
+DEFAULT_UPBEATS = True   # the "and"s sound by default — turn them off in the sidebar
 DEFAULT_UPBEAT_FACTOR = 1.5
 
 
@@ -237,7 +238,7 @@ def render_meter_track(n, cycle_len, base_freq, sr=SR, rank=None):
     for i, p in enumerate(positions):
         click = make_click(beat_freq(n, base_freq, i, rank), sr=sr)
         add_wrapped(track, click, int(p * sr))
-        if st.session_state.get("enable_upbeats", False):
+        if st.session_state.get("enable_upbeats", DEFAULT_UPBEATS):
             and_p = p + cycle_len / n / 2  # the "and" between this beat and the next
             add_wrapped(track, make_click(and_freq(n, base_freq, rank), sr=sr) * AND_GAIN,
                          int(and_p * sr))
@@ -356,7 +357,7 @@ def render_node(node, start, end, base_freq, amp_scale, amp, track, sr):
         t = start + i * step
         click = make_click(beat_freq(node.meter, base_freq, i, node.rank), sr=sr)
         add_wrapped(track, click * amp, int(t * sr))
-        if st.session_state.get("enable_upbeats", False):
+        if st.session_state.get("enable_upbeats", DEFAULT_UPBEATS):
             and_click = make_click(and_freq(node.meter, base_freq, node.rank), sr=sr)
             add_wrapped(track, and_click * amp * AND_GAIN, int((t + step / 2) * sr))
         if i in node.on:
@@ -537,12 +538,12 @@ if st.session_state.get("waves", False):
     )
 st.sidebar.toggle(
     "Play 'and' between each beat",
-    value=st.session_state.get("enable_upbeats", False),
+    value=st.session_state.get("enable_upbeats", DEFAULT_UPBEATS),
     key="enable_upbeats",
     help="Add a lighter between-each 'and' — the 'and' of 'one and, two and' — "
          "halfway between a pulse's beats, ringing at the upbeat pitch.",
 )
-if st.session_state.get("enable_upbeats", False):
+if st.session_state.get("enable_upbeats", DEFAULT_UPBEATS):
     st.sidebar.slider(
         "Upbeat pitch factor",
         min_value=1.05, max_value=3.0, value=1.5, step=0.05,

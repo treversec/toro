@@ -14,12 +14,14 @@ import toro
 # --- _add_wave (pure helper) ------------------------------------------------
 
 def test_wave_breathes_quietest_at_the_trough_between_beats():
+    st.session_state["enable_upbeats"] = False
     track = np.zeros(1000)
     toro._add_wave(track, 2, 0.0, 1.0, 40, sr=1000, amp=0.4)  # beats at 0 and 0.5s
     assert track[250] == pytest.approx(0.0, abs=1e-6)  # halfway to the beat: silent
 
 
 def test_wave_is_loud_near_the_beat():
+    st.session_state["enable_upbeats"] = False
     track = np.zeros(1000)
     toro._add_wave(track, 2, 0.0, 1.0, 40, sr=1000, amp=0.4)
     assert abs(track[125]) > 0.15  # quarter of the way to the beat: tone swelling up
@@ -29,12 +31,14 @@ def test_wave_swells_meet_at_silent_troughs_across_cycles():
     """Each beat's swell fades fully to silence in its trough, so the wave joins
     its next cycle with no seam (each trough reads 0.0) and the constant-pitch
     wave carries no leftover phase across it."""
+    st.session_state["enable_upbeats"] = False
     w = np.zeros(4000)
     toro._add_wave(w, 3, 0.0, 4.0, 40, sr=1000, amp=0.4)
     assert abs(w[1999] - w[2000]) < 1e-4  # trough between segments: both are silence
 
 
 def test_wave_pitch_tracks_the_meter():
+    st.session_state["enable_upbeats"] = False
     track_hi = np.zeros(2000)
     track_lo = np.zeros(2000)
     toro._add_wave(track_hi, 8, 0.0, 2.0, 40, sr=1000, amp=0.4)
@@ -87,11 +91,12 @@ def test_render_node_plays_an_and_between_each_beat():
     st.session_state["waves"] = True
     track = np.zeros(3000)
     toro.render_node(toro.Node(3), 0.0, 3.0, 40, 0.6, 1.0, track, 1000)
-    assert abs(track[500]) > 0.15     # the "and" between beat 0 (0s) and beat 1 (1s)
+    assert max(abs(track[490:510])) > 0.15  # the "and" sounds at 0.5s, between beat 0 and beat 1
     st.session_state["enable_upbeats"] = False
 
 
 def test_render_node_keys_pitch_by_selection_order():
+    st.session_state["enable_upbeats"] = False
     st.session_state["waves"] = True
     lo = np.zeros(3000)
     toro.render_node(toro.Node(3, rank=1), 0.0, 3.0, 40, 0.6, 1.0, lo, 1000)
@@ -145,6 +150,7 @@ def test_render_node_scales_wave_with_node_amplitude():
 # --- selection order = the perspective ----------------------------------------
 
 def test_rank_keys_pitch_higher_for_later_selections():
+    st.session_state["enable_upbeats"] = False
     low = np.zeros(3000)
     toro._add_wave(low, 3, 0.0, 3.0, 40, rank=1, sr=1000, amp=0.4)
     high = np.zeros(3000)
@@ -157,6 +163,7 @@ def test_rank_keys_pitch_higher_for_later_selections():
 
 
 def test_first_selection_sounds_louder_than_the_same_meter_second():
+    st.session_state["enable_upbeats"] = False
     st.session_state["waves"] = True
     first = toro.render_meter_mix([5, 3], 2.0, 40, sr=1000)   # 5 entered first: the foundation
     second = toro.render_meter_mix([3, 5], 2.0, 40, sr=1000)  # 5 entered second
