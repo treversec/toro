@@ -24,6 +24,16 @@ def test_ands_are_on_by_default():
     assert len(app.exception) == 0
 
 
+def test_cycle_length_defaults_to_four_and_reaches_eight():
+    app = AppTest.from_file(APP, default_timeout=30)
+    app.run()
+    assert app.slider(key="cycle_len").value == 4.0    # double the old 2.0s baseline
+    assert app.slider(key="cycle_len").max == 8.0       # ceiling doubled too
+    app.slider(key="cycle_len").set_value(6.0)
+    app.run()
+    assert len(app.exception) == 0
+
+
 def test_accent_radios_default_to_first_pick_and_rerun_cleanly():
     app = AppTest.from_file(APP, default_timeout=30)
     app.run()
