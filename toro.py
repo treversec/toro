@@ -53,16 +53,23 @@ def make_click(freq, sr=SR, dur=0.09, decay=22):
     return _SOUNDS.get(name, _click_beep)(freq, sr=sr, dur=dur, decay=decay)
 
 
-def make_and_click(freq, sr=SR, dur=0.045, decay=85):
+def make_and_click(freq, sr=SR, dur=0.045, meter=1):
     """The "and": a *closed*, staccato stroke — short, a fast downward pitch dab,
-    and a decay so tight it cannot ring. The subdivision reads as its own closed
-    voice against the beats' open ring, however they are tuned.
+    and a decay so tight it cannot ring, so the subdivision reads as its own
+    closed voice against the beats' open ring. `meter` is the meter's own number:
+    higher meters' ticks mix in a drier, crisper top partial, so each base's
+    "and" has its own shade without ever needing a palette big enough to run
+    out. The stroke stays deterministic (no noise source) and stays closed at
+    every meter.
     """
     n = int(sr * dur)
     t = np.linspace(0, dur, n, endpoint=False)
     sweep = freq * (1.0 + 1.2 * np.exp(-60 * t))
     phase = 2 * np.pi * np.cumsum(sweep) / sr
-    return np.sin(phase) * np.exp(-decay * t)
+    body = np.sin(phase) * np.exp(-(85 + 6 * (meter - 1)) * t)
+    crack = np.sin(2 * np.pi * (1400 + 150 * meter) * t) * np.exp(-(120 + 10 * (meter - 1)) * t)
+    mix = 0.25 + 0.55 * (meter - 1) / 8.0      # low meters: pure tick; high: drier
+    return body * (1 - mix) + crack * mix
 
 
 def _accent_deep_drum(freq, sr=SR, dur=0.16):
@@ -218,11 +225,16 @@ def beat_freq(n, base_freq, beat_index, rank=None):
 
 def and_freq(n, base_freq, rank=None):
     """Pitch of the "and" that plays halfway between a meter's beats: the meter's
-    own pitch times the `upbeat_factor`. Reads the factor from `st.session_state`,
-    so it's configurable from the sidebar.
+    own pitch times the `upbeat_factor` — climbing a *ladder* by selection rank
+    (each later rank sits 12% higher than the last, on top of the factor), so
+    upbeats of neighboring bases are separated by pitch as well as by transience.
+    Falls back to the meter's own number as its rung when no `rank` is given.
+    Reads the factor from `st.session_state`, so it's configurable from the
+    sidebar.
     """
     factor = st.session_state.get("upbeat_factor", DEFAULT_UPBEAT_FACTOR)
-    return meter_freq(n, base_freq, rank) * factor
+    rung = rank if rank is not None else n
+    return meter_freq(n, base_freq, rank) * factor * (1 + 0.12 * (rung - 1))
 
 
 # The "and" between beats is a bit lighter than its beat, so the beat still leads
@@ -306,7 +318,8 @@ def render_meter_track(n, cycle_len, base_freq, sr=SR, rank=None):
         add_wrapped(track, click, int(p * sr))
         if st.session_state.get("enable_upbeats", DEFAULT_UPBEATS):
             and_p = p + cycle_len / n / 2  # the "and" between this beat and the next
-            add_wrapped(track, make_and_click(and_freq(n, base_freq, rank), sr=sr) * AND_GAIN,
+            add_wrapped(track, make_and_click(and_freq(n, base_freq, rank), sr=sr,
+                                              meter=n) * AND_GAIN,
                          int(and_p * sr))
     if st.session_state.get("waves", False):
         wave_amp = st.session_state.get("wave_amp", DEFAULT_WAVE_AMP)
@@ -443,7 +456,8 @@ def render_node(node, start, end, base_freq, amp_scale, amp, track, sr):
         click = make_click(beat_freq(node.meter, base_freq, i, node.rank), sr=sr)
         add_wrapped(track, click * amp, int(t * sr))
         if st.session_state.get("enable_upbeats", DEFAULT_UPBEATS):
-            and_click = make_and_click(and_freq(node.meter, base_freq, node.rank), sr=sr)
+            and_click = make_and_click(and_freq(node.meter, base_freq, node.rank), sr=sr,
+                                       meter=node.meter)
             add_wrapped(track, and_click * amp * AND_GAIN, int((t + step / 2) * sr))
         if i in node.on:
             for child in node.patterns:

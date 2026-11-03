@@ -51,15 +51,48 @@ def test_wave_pitch_tracks_the_meter():
 
 def test_upbeat_pitch_factor_defaults_to_two():
     st.session_state.pop("upbeat_factor", None)   # fresh default — not a leftover factor
-    assert toro.and_freq(3, 40) == pytest.approx(toro.meter_freq(3, 40) * 2.0)
+    # The accent rung (rank 1) sits at the slider's factor: exactly ×2.0.
+    assert toro.and_freq(3, 40, rank=1) == pytest.approx(toro.meter_freq(3, 40, rank=1) * 2.0)
+
+
+def test_and_pitch_ladder_climbs_with_selection_rank():
+    st.session_state["upbeat_factor"] = 2.0
+    # The and-beat ratio is the and-ladder itself: the accent rings 2.0× its beat,
+    # and each later rank rings a little higher on top of that.
+    r1 = toro.and_freq(5, 40, rank=1) / toro.beat_freq(5, 40, 0, rank=1)
+    r2 = toro.and_freq(5, 40, rank=2) / toro.beat_freq(5, 40, 0, rank=2)
+    r3 = toro.and_freq(5, 40, rank=3) / toro.beat_freq(5, 40, 0, rank=3)
+    assert r1 == pytest.approx(2.0)                 # the slider's factor, undiluted
+    assert r2 > 1.1 * r1 and r3 > 1.1 * r2          # the ladder strictly climbs
+    solo = toro.and_freq(3, 40) / toro.beat_freq(3, 40, 0)   # rank omitted → own rung
+    assert solo > r1                                # meter 3's ands ride above the accent's
+    assert toro.and_freq(3, 40) > toro.and_freq(3, 40, rank=1)
+
+
+def test_and_tick_brightness_differs_by_meter():
+    st.session_state["enable_upbeats"] = True
+
+    def crossings(x):
+        return int(np.sum(np.diff(np.sign(x)) != 0))
+
+    tick2 = toro.make_and_click(124, sr=4000, meter=2)
+    tick5 = toro.make_and_click(124, sr=4000, meter=5)
+    tick9 = toro.make_and_click(124, sr=4000, meter=9)
+    # Higher meters tick drier (crisper top partial), so the same closed stroke
+    # crosses zero more often — the meter's own "and" voice, staying short and
+    # closed at every meter. sr=4000 keeps the top partial under Nyquist.
+    assert crossings(tick9) > 1.5 * crossings(tick2)
+    assert crossings(tick5) > 1.3 * crossings(tick2)     # the climb is monotonic
+    assert np.allclose(tick5, toro.make_and_click(124, sr=4000, meter=5))  # deterministic
 
 
 def test_and_rings_at_the_upbeat_factor():
     st.session_state["enable_upbeats"] = True
     st.session_state["upbeat_factor"] = 1.5
     # The "and" between the beats rings at the upbeat pitch — the pulse pitch times
-    # the factor — while every beat itself rings at the pulse's own pitch.
-    assert toro.and_freq(3, 40) == pytest.approx(toro.meter_freq(3, 40) * 1.5)
+    # the factor (which climbs a ladder by selection rank, meter 3 on its own rung),
+    # while every beat itself rings at the pulse's own pitch.
+    assert toro.and_freq(3, 40) == pytest.approx(toro.meter_freq(3, 40) * 1.5 * (1 + 0.12 * 2))
     assert toro.beat_freq(3, 40, 1) == toro.beat_freq(3, 40, 0)
     st.session_state["enable_upbeats"] = False
 
