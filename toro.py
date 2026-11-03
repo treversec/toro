@@ -234,19 +234,32 @@ AND_GAIN = 0.7
 DEFAULT_COUNTS = False
 
 
+def _trim_silence(a, thresh=1e-3):
+    """Cut the silent pre-roll and tail off a spoken word, leaving the voice
+    itself untouched. What survives starts at its first audible sample — so a
+    count word placed at a beat sample *starts* on that beat rather than after
+    the engine's lead-in pause."""
+    nz = np.nonzero(np.abs(a) > thresh)[0]
+    if len(nz) == 0:
+        return a[:0]
+    return a[nz[0]:nz[-1] + 1]
+
+
 @st.cache_data(show_spinner=False)
 def _spoken_word(word):
-    """Speak one count word ("1", "and", …) into float samples at the app's SR.
-    gTTS + miniaudio are both pure-Python (no system binaries), so this runs on
-    Streamlit Cloud untouched; each word costs one short network call, once.
+    """Speak one count word ("1", "and", …) into float samples at the app's SR,
+    trimmed so the first sample is the word's actual onset. edge-tts (pure
+    Python, Microsoft's Edge voice) both speaks faster than gTTS — the counts
+    come out staccato — and returns 44.1 kHz audio natively, plus a fast rate
+    ("+50%") keeps each word to about a third of a second. Each word costs one
+    short network call, once, cached per word.
     """
-    import io
-    from gtts import gTTS
-    import miniaudio
-    buf = io.BytesIO()
-    gTTS(text=word, lang="en", slow=False).write_to_fp(buf)
-    dec = miniaudio.decode(buf.getvalue(), output_format=miniaudio.SampleFormat.FLOAT32)
-    return np.array(dec.samples, dtype=np.float32)
+    import edge_tts, miniaudio
+    chunks = b"".join(c["data"] for c in
+                      edge_tts.Communicate(word, rate="+50%").stream_sync()
+                      if c["type"] == "audio")
+    dec = miniaudio.decode(chunks, output_format=miniaudio.SampleFormat.FLOAT32)
+    return _trim_silence(np.array(dec.samples, dtype=np.float32))
 
 
 def add_counts(track, accent, cycle_len, base_freq, sr=SR, words=None):

@@ -36,6 +36,26 @@ def test_counts_off_by_default_silences_the_words():
     assert np.max(np.abs(track)) < 1e-9  # nothing spoken until the toggle is on
 
 
+def _word_with_loud_start():
+    """A word whose very first sample is loud (a real speech onset), with silent pads."""
+    body = np.concatenate([np.full(60, 0.4), burst(220)])
+    return np.concatenate([np.zeros(300), body, np.zeros(500)]), body
+
+
+def test_trim_silence_strips_the_lead_in_so_onsets_are_immediate():
+    raw, body = _word_with_loud_start()
+    t = toro._trim_silence(raw)
+    assert np.allclose(t, body)                  # only the 300-sample lead-in is gone
+    assert abs(t[0]) > 0.2                       # sample 0 IS the first audible sample
+
+
+def test_trim_silence_leaves_tight_words_and_silence_alone():
+    tight = _word_with_loud_start()[1]
+    t = toro._trim_silence(tight)
+    assert len(t) == len(tight) and np.allclose(t, tight)
+    assert len(toro._trim_silence(np.zeros(100))) == 0  # all-silence: nothing survives
+
+
 def test_counts_say_every_beat_and_every_and_of_the_accent():
     st.session_state["enable_counts"] = True
     st.session_state["enable_upbeats"] = True
