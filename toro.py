@@ -217,6 +217,47 @@ def and_freq(n, base_freq, rank=None):
 # and the subdivision reads as "one *and*, two *and*" rather than a faster pulse.
 AND_GAIN = 0.7
 
+# Spoken counts are off until toggled on (see sidebar widgets). Session state
+# holds the live value: enable_counts (bool).
+DEFAULT_COUNTS = False
+
+
+@st.cache_data(show_spinner=False)
+def _spoken_word(word):
+    """Speak one count word ("1", "and", …) into float samples at the app's SR.
+    gTTS + miniaudio are both pure-Python (no system binaries), so this runs on
+    Streamlit Cloud untouched; each word costs one short network call, once.
+    """
+    import io
+    from gtts import gTTS
+    import miniaudio
+    buf = io.BytesIO()
+    gTTS(text=word, lang="en", slow=False).write_to_fp(buf)
+    dec = miniaudio.decode(buf.getvalue(), output_format=miniaudio.SampleFormat.FLOAT32)
+    return np.array(dec.samples, dtype=np.float32)
+
+
+def add_counts(track, accent, cycle_len, base_freq, sr=SR, words=None):
+    """Spoken counts for the accent meter: the accent says its numbers — "1", "2",
+    … with each word starting on one of its beats, and an "and" at each and — so
+    the lead meter's count rides over the rhythm. `words` is a dict of
+    word→samples (tests pass stubs and never touch the network); the app lets
+    it default to the cached gTTS voice. Nothing is added while the spoken-
+    counts toggle is off.
+    """
+    if not st.session_state.get("enable_counts", DEFAULT_COUNTS):
+        return track
+
+    def audio(w):
+        return _spoken_word(w) if words is None else words[w]
+
+    period = cycle_len / accent
+    for k in range(accent):
+        add_wrapped(track, audio(str(k + 1)), int(k * period * sr))
+        if st.session_state.get("enable_upbeats", DEFAULT_UPBEATS):
+            add_wrapped(track, audio("and"), int((k + 0.5) * period * sr))
+    return track
+
 
 def render_meter_track(n, cycle_len, base_freq, sr=SR, rank=None):
     """n evenly spaced clicks across one cycle, pitched by its *position in the
@@ -283,7 +324,7 @@ def _normalize(cycle):
     return cycle
 
 
-def render_combined(meters, cycle_len, base_freq, sr=SR):
+def render_combined(meters, cycle_len, base_freq, sr=SR, count_words=None):
     """Render the base pyramid into one cycle.
 
     The selection *order* is the perspective: `meters` is used in the order it is
@@ -294,17 +335,30 @@ def render_combined(meters, cycle_len, base_freq, sr=SR):
     the meters are split across two channels (half on the left, half on the
     right) and the result is a stereo array of shape `(2, N)`; the cycle-start
     indicator stays centred on both channels.
+
+    When the spoken-counts toggle is on, the accent meter (`meters[0]`, the
+    foundation) says its numbers over its own beat grid, centred on both
+    channels like the cycle-start indicator. `count_words` is a word→samples
+    dict used by tests; the app lets it default to the cached gTTS voice.
     """
     if not st.session_state.get("stereo", False):
-        return _normalize(render_meter_mix(meters, cycle_len, base_freq, sr=sr))
+        cycle = render_meter_mix(meters, cycle_len, base_freq, sr=sr)
+        if meters and st.session_state.get("enable_counts", DEFAULT_COUNTS):
+            add_counts(cycle, meters[0], cycle_len, base_freq, sr=sr, words=count_words)
+        return _normalize(cycle)
 
     ordered = list(meters)
     if len(ordered) < 2:
         left = render_meter_mix(ordered, cycle_len, base_freq, sr=sr)
+        if ordered and st.session_state.get("enable_counts", DEFAULT_COUNTS):
+            add_counts(left, ordered[0], cycle_len, base_freq, sr=sr, words=count_words)
         return np.vstack([left, left])
     mid = (len(ordered) + 1) // 2
     left = render_meter_mix(ordered[:mid], cycle_len, base_freq, sr=sr)
     right = render_meter_mix(ordered[mid:], cycle_len, base_freq, sr=sr)
+    if st.session_state.get("enable_counts", DEFAULT_COUNTS):
+        add_counts(left, ordered[0], cycle_len, base_freq, sr=sr, words=count_words)
+        add_counts(right, ordered[0], cycle_len, base_freq, sr=sr, words=count_words)
     stereo = np.vstack([left, right])
     peak = np.max(np.abs(stereo))
     if peak > 0:
@@ -373,7 +427,7 @@ def render_node(node, start, end, base_freq, amp_scale, amp, track, sr):
 
 
 def render_forest(roots, cycle_len, base_freq, amp_scale=0.6, sr=SR,
-                  accent=True):
+                  accent=True, count_words=None):
     """Render a list of root patterns (the base pyramid) into one cycle.
 
     Each root is a `Node`. All meters at all depths sound; sub-patterns are
@@ -381,7 +435,10 @@ def render_forest(roots, cycle_len, base_freq, amp_scale=0.6, sr=SR,
     (first picked = foundation, lowest and slightly louder) down every level.
     When
     `accent` is on, the cycle-start indicator (where all beats intersect at
-    t=0) is added per the selected cycle-accent option.
+    t=0) is added per the selected cycle-accent option. When the spoken-counts
+    toggle is on, the accent base (`roots[0]`) says its numbers over its own
+    beat grid; `count_words` is a word→samples dict used by tests, letting the
+    app default to the cached gTTS voice.
     """
     one_cycle = np.zeros(int(cycle_len * sr))
     for node in roots:
@@ -389,6 +446,9 @@ def render_forest(roots, cycle_len, base_freq, amp_scale=0.6, sr=SR,
                     one_cycle, sr)
     if accent:
         add_cycle_accent(one_cycle, sr=sr)
+    if roots and st.session_state.get("enable_counts", DEFAULT_COUNTS):
+        add_counts(one_cycle, roots[0].meter, cycle_len, base_freq, sr=sr,
+                  words=count_words)
     peak = np.max(np.abs(one_cycle))
     if peak > 0:
         one_cycle = one_cycle / peak * 0.9
@@ -558,6 +618,13 @@ if st.session_state.get("enable_upbeats", DEFAULT_UPBEATS):
         help="How high the 'and' between beats rings relative to the beats "
              "(1.05 = barely higher, 3.0 = very high).",
     )
+st.sidebar.toggle(
+    "Spoken counts (the accent says the numbers)",
+    value=st.session_state.get("enable_counts", DEFAULT_COUNTS),
+    key="enable_counts",
+    help="A voice counts over the rhythm: the accent meter says 'one, and, two, "
+         "and…' over its own beats — the lead meter's count riding the groove.",
+)
 cycle_accent = st.sidebar.radio(
     "Cycle start indicator",
     options=["Off"] + list(_CYCLE_ACCENTS),

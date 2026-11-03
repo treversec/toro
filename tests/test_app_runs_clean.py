@@ -34,6 +34,13 @@ def test_cycle_length_defaults_to_four_and_reaches_eight():
     assert len(app.exception) == 0
 
 
+def test_spoken_counts_toggle_defaults_off():
+    app = AppTest.from_file(APP, default_timeout=30)
+    app.run()
+    assert app.toggle(key="enable_counts").value is False
+    assert len(app.exception) == 0
+
+
 def test_accent_radios_default_to_first_pick_and_rerun_cleanly():
     app = AppTest.from_file(APP, default_timeout=30)
     app.run()
