@@ -53,6 +53,18 @@ def make_click(freq, sr=SR, dur=0.09, decay=22):
     return _SOUNDS.get(name, _click_beep)(freq, sr=sr, dur=dur, decay=decay)
 
 
+def make_and_click(freq, sr=SR, dur=0.045, decay=85):
+    """The "and": a *closed*, staccato stroke — short, a fast downward pitch dab,
+    and a decay so tight it cannot ring. The subdivision reads as its own closed
+    voice against the beats' open ring, however they are tuned.
+    """
+    n = int(sr * dur)
+    t = np.linspace(0, dur, n, endpoint=False)
+    sweep = freq * (1.0 + 1.2 * np.exp(-60 * t))
+    phase = 2 * np.pi * np.cumsum(sweep) / sr
+    return np.sin(phase) * np.exp(-decay * t)
+
+
 def _accent_deep_drum(freq, sr=SR, dur=0.16):
     """A clean, sub-heavy kick for the start of the cycle. A short downward
     pitch sweep gives the "thump"; the decay is kept fast and tight so it reads
@@ -191,7 +203,7 @@ def meter_freq(n, base_freq, rank=None):
 # Defaults for the "Play 'and' between each beat" option (see sidebar widgets).
 # Session state holds the live values: enable_upbeats (bool) and upbeat_factor (float).
 DEFAULT_UPBEATS = True   # the "and"s sound by default — turn them off in the sidebar
-DEFAULT_UPBEAT_FACTOR = 1.5
+DEFAULT_UPBEAT_FACTOR = 2.0
 
 
 def beat_freq(n, base_freq, beat_index, rank=None):
@@ -281,7 +293,7 @@ def render_meter_track(n, cycle_len, base_freq, sr=SR, rank=None):
         add_wrapped(track, click, int(p * sr))
         if st.session_state.get("enable_upbeats", DEFAULT_UPBEATS):
             and_p = p + cycle_len / n / 2  # the "and" between this beat and the next
-            add_wrapped(track, make_click(and_freq(n, base_freq, rank), sr=sr) * AND_GAIN,
+            add_wrapped(track, make_and_click(and_freq(n, base_freq, rank), sr=sr) * AND_GAIN,
                          int(and_p * sr))
     if st.session_state.get("waves", False):
         wave_amp = st.session_state.get("wave_amp", DEFAULT_WAVE_AMP)
@@ -418,7 +430,7 @@ def render_node(node, start, end, base_freq, amp_scale, amp, track, sr):
         click = make_click(beat_freq(node.meter, base_freq, i, node.rank), sr=sr)
         add_wrapped(track, click * amp, int(t * sr))
         if st.session_state.get("enable_upbeats", DEFAULT_UPBEATS):
-            and_click = make_click(and_freq(node.meter, base_freq, node.rank), sr=sr)
+            and_click = make_and_click(and_freq(node.meter, base_freq, node.rank), sr=sr)
             add_wrapped(track, and_click * amp * AND_GAIN, int((t + step / 2) * sr))
         if i in node.on:
             for child in node.patterns:
@@ -613,7 +625,7 @@ st.sidebar.toggle(
 if st.session_state.get("enable_upbeats", DEFAULT_UPBEATS):
     st.sidebar.slider(
         "Upbeat pitch factor",
-        min_value=1.05, max_value=3.0, value=1.5, step=0.05,
+        min_value=1.05, max_value=3.0, value=2.0, step=0.05,
         key="upbeat_factor",
         help="How high the 'and' between beats rings relative to the beats "
              "(1.05 = barely higher, 3.0 = very high).",

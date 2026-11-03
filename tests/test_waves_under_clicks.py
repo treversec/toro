@@ -49,6 +49,11 @@ def test_wave_pitch_tracks_the_meter():
     assert abs(track_hi[mid_beat]) < abs(track_lo[mid_beat])
 
 
+def test_upbeat_pitch_factor_defaults_to_two():
+    st.session_state.pop("upbeat_factor", None)   # fresh default — not a leftover factor
+    assert toro.and_freq(3, 40) == pytest.approx(toro.meter_freq(3, 40) * 2.0)
+
+
 def test_and_rings_at_the_upbeat_factor():
     st.session_state["enable_upbeats"] = True
     st.session_state["upbeat_factor"] = 1.5
@@ -57,6 +62,17 @@ def test_and_rings_at_the_upbeat_factor():
     assert toro.and_freq(3, 40) == pytest.approx(toro.meter_freq(3, 40) * 1.5)
     assert toro.beat_freq(3, 40, 1) == toro.beat_freq(3, 40, 0)
     st.session_state["enable_upbeats"] = False
+
+
+def test_and_sound_is_closed_staccato():
+    st.session_state["enable_upbeats"] = True
+    a = toro.make_and_click(124, sr=1000)              # the "and": closed, no ring
+    tail = np.abs(a[int(len(a) * 0.6):])
+    assert len(a) < 0.06 * 1000                         # short, staccato
+    assert np.max(tail) < 0.15 * np.max(np.abs(a))      # and the tail is a closed death
+    open_click = toro.make_click(124, sr=1000)          # beats keep the open ring
+    open_tail = np.abs(open_click[int(len(open_click) * 0.6):])
+    assert np.max(open_tail) > 0.15 * np.max(np.abs(open_click))
 
 
 def test_and_click_plays_between_the_beats():

@@ -21,6 +21,7 @@ def test_ands_are_on_by_default():
     app = AppTest.from_file(APP, default_timeout=30)
     app.run()
     assert app.toggle(key="enable_upbeats").value is True
+    assert app.slider(key="upbeat_factor").value == 2.0
     assert len(app.exception) == 0
 
 
