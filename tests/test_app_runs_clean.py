@@ -42,6 +42,16 @@ def test_spoken_counts_toggle_defaults_off():
     assert len(app.exception) == 0
 
 
+def test_rotate_accent_toggle_defaults_off_and_offers_turn_length():
+    app = AppTest.from_file(APP, default_timeout=30)
+    app.run()
+    assert app.toggle(key="rotate_accent").value is False
+    app.toggle(key="rotate_accent").set_value(True)
+    app.run()
+    assert app.slider(key="rotate_turn_len").value == 2   # "every two measures" default
+    assert len(app.exception) == 0
+
+
 def test_accent_radios_default_to_first_pick_and_rerun_cleanly():
     app = AppTest.from_file(APP, default_timeout=30)
     app.run()

@@ -404,6 +404,34 @@ def render_combined(meters, cycle_len, base_freq, sr=SR, count_words=None):
     return stereo
 
 
+def _finish_rotation(parts, turn_len):
+    """Concatenate one-cycle segments, `turn_len` copies of each, into one
+    normalized clip. Mono and stereo (2, N) buffers both concatenate along the
+    last axis, and the whole clip is peaked at 0.9 once."""
+    clip = np.concatenate([np.concatenate([p] * turn_len, axis=-1) for p in parts], axis=-1)
+    return _normalize(clip)
+
+
+def render_rotated(meters, cycle_len, base_freq, sr=SR, turn_len=2, accent=None,
+                   count_words=None):
+    """Rotate the accent through every selected meter inside one clip: the
+    radio's pick leads first, then each following base in selection order, with
+    `turn_len` cycles at each hand-off. The minimum clip covers every base once
+    (bases × turn_len cycles); the whole rotation peaks at 0.9 like a single
+    cycle. Spoken counts (when toggled on) hand off with the accent, because
+    each turn is rendered through `render_combined` with that turn's ordering.
+    """
+    if not meters:
+        return np.zeros(0)
+    order = lead_with(meters, meters[0] if accent is None else accent)
+    parts = [
+        render_combined(lead_with(meters, m), cycle_len, base_freq, sr=sr,
+                        count_words=count_words)
+        for m in order
+    ]
+    return _finish_rotation(parts, turn_len)
+
+
 # ---------------------------------------------------------------------------
 # Rhythm fractals (patterns layered on patterns)
 # ---------------------------------------------------------------------------
@@ -664,6 +692,23 @@ st.sidebar.toggle(
     help="A voice counts over the rhythm: the accent meter says 'one, and, two, "
          "and…' over its own beats — the lead meter's count riding the groove.",
 )
+st.sidebar.toggle(
+    "Alternate the accent every N cycles",
+    value=st.session_state.get("rotate_accent", False),
+    key="rotate_accent",
+    help="Hand the accent (and the spoken count, when on) from base to base "
+         "within one clip: each base leads for a turn, then the next — the "
+         "radio's pick starts the rotation, the rest follow your selection order.",
+)
+if st.session_state.get("rotate_accent", False):
+    st.sidebar.slider(
+        "Cycles per accent (turn length)",
+        min_value=1, max_value=4, value=2, step=1,
+        key="rotate_turn_len",
+        help="How many cycles each base leads before the accent hands off. The "
+             "clip always gives every base its turn, so its minimum length is "
+             "bases × this many cycles.",
+    )
 cycle_accent = st.sidebar.radio(
     "Cycle start indicator",
     options=["Off"] + list(_CYCLE_ACCENTS),
@@ -744,6 +789,21 @@ with choose_col:
     if st.button("Play selected pyramid", type="primary"):
         if not chosen:
             st.warning("Select at least one meter first.")
+        elif st.session_state.get("rotate_accent", False):
+            turn_len = st.session_state.get("rotate_turn_len", 2)
+            order = lead_with(chosen, accent)
+            clip = render_rotated(chosen, cycle_len, base_freq,
+                                  turn_len=turn_len, accent=accent)
+            play_looped(clip, num_cycles)
+            st.pyplot(draw_timeline(chosen, cycle_len))
+            st.caption(
+                f"Meters {', '.join(map(str, chosen))} all fill the same "
+                f"{cycle_len:.2f}s cycle; the accent rotates through "
+                f"{', '.join(map(str, order))} every {turn_len} cycle(s) — "
+                f"**{accent}** leads first — each base lowest and slightly "
+                "louder during its turn, the rest following your selection "
+                "order above it."
+            )
         else:
             ordered = lead_with(chosen, accent)
             play_looped(render_combined(ordered, cycle_len, base_freq), num_cycles)
@@ -870,6 +930,37 @@ with fractal_col:
     if st.button("Play fractal loop", type="primary"):
         if not chosen_bases:
             st.warning("Select at least one base meter first.")
+        elif st.session_state.get("rotate_accent", False):
+            turn_len = st.session_state.get("rotate_turn_len", 2)
+            order = lead_with(chosen_bases, accent_base)
+            turn_roots = []
+            oversize = False
+            for m in order:
+                roots = build_fractal(lead_with(chosen_bases, m), depth, on_by_meter)
+                if count_nodes(roots) > 4000:
+                    oversize = True
+                    break
+                turn_roots.append(roots)
+            if oversize:
+                st.warning(
+                    f"Depth {depth} with bases {chosen_bases} builds an accent "
+                    "rotation with too many pulses to render clearly. Reduce "
+                    "depth, base meters, or turn-length."
+                )
+            else:
+                parts = [render_forest(r, cycle_len, base_freq,
+                                       amp_scale=amp_scale) for r in turn_roots]
+                play_looped(_finish_rotation(parts, turn_len), num_cycles)
+                st.pyplot(draw_forest(turn_roots[0], cycle_len))
+                st.caption(
+                    "Base polyrhythm: "
+                    + ", ".join(map(str, chosen_bases))
+                    + f" over the {cycle_len:.2f}s cycle, nested {depth} level(s) "
+                    "deep on the selected pulses; the accent base rotates through "
+                    f"{', '.join(map(str, order))} every {turn_len} cycle(s) — "
+                    f"**{accent_base}** leads first — each base lowest and "
+                    "slightly louder during its turn, at every depth."
+                )
         else:
             ordered_bases = lead_with(chosen_bases, accent_base)
             ordered_roots = build_fractal(ordered_bases, depth, on_by_meter)

@@ -37,6 +37,9 @@ fundamental, so you hear the metaphor, not just the beat.
   the groove. The *accent* is the perspective — in the pyramid and in the
   fractals alike: a radio picks which meter is the foundation — lowest and
   slightly louder — and each later pick perches one rung higher after it.
+  An "alternate the accent" option hands the lead (and the spoken count)
+  from base to base every N cycles inside one clip, always giving every
+  selected base its turn.
 - **Seamless looping.** Every cycle loops cleanly into the next, with
   configurable repetition counts for longer listening buffers.
 - **Stereo spread.** Split the base pyramid across left/right channels to
