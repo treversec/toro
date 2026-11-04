@@ -29,14 +29,16 @@ fundamental, so you hear the metaphor, not just the beat.
   *selection order* at every nesting depth.
 - **Rich, configurable sound.** Pitched beeps or synthesized drums,
   a separate low-downbeat/cycle-start accent ("deep drum" or "high chime"),
-  the "and" between each beat (on by default) — each base's "and" climbs the
-  selection-order ladder and ticks in its own shade — plus an optional "waves
-  under the clicks" mode where each beat's audible swell rings at that pulse's
-  own frequency, and optional **spoken counts**: the accent meter says "one,
-  and, two, and…" over its own beats, so you hear the lead meter's count riding
-  the groove. The *accent* is the perspective — in the pyramid and in the
-  fractals alike: a radio picks which meter is the foundation — lowest and
-  slightly louder — and each later pick perches one rung higher after it.
+  the "and" between each beat (on by default) — each base's "and" is a light
+  high brush, pitched clearly above its own click, climbing the
+  selection-order ladder and shading drier with the meter's number — plus an
+  optional "waves under the clicks" mode where each beat's audible swell rings
+  at that pulse's own frequency, and optional **spoken counts**: the accent
+  meter says "one, and, two, and…" over its own beats, so you hear the lead
+  meter's count riding the groove. The *accent* is the perspective — in the
+  pyramid and in the fractals alike: a radio picks which meter is the
+  foundation — lowest and slightly louder, crowned with a bright high glint on
+  its beats — and each later pick perches one rung higher after it.
   An "alternate the accent" option hands the lead (and the spoken count)
   from base to base every N cycles inside one clip, always giving every
   selected base its turn.

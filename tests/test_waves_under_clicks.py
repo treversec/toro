@@ -69,21 +69,48 @@ def test_and_pitch_ladder_climbs_with_selection_rank():
     assert toro.and_freq(3, 40) > toro.and_freq(3, 40, rank=1)
 
 
+def test_and_brush_is_a_light_high_pitched_swish():
+    # The "and" of jazz brushes: LIGHTER than its beat click, and a clearly
+    # PITCHED tone at its own (higher) rung — the tone carries a soft high-band
+    # brush air, and the whole stroke peaks at 0.55. Pitch reads by spectrum:
+    # the stroke's dominant tone sits on its rung, and doubling the rung doubles
+    # the dominant frequency — so the wave's low beat → high "and" glide reads.
+    sr = 44100
+    lo = toro.make_and_click(240, sr=sr, meter=3)
+    hi = toro.make_and_click(480, sr=sr, meter=3)
+
+    def dominant(x):
+        win = np.hanning(len(x))
+        X = np.abs(np.fft.rfft(x * win))
+        f = np.fft.rfftfreq(len(x), 1 / sr)
+        return f[np.argmax(X)]
+
+    assert np.max(np.abs(hi)) == pytest.approx(0.55, abs=1e-3)   # lighter: soft brush
+    beat = toro.make_click(120, sr=sr)
+    assert np.max(np.abs(lo)) < np.max(np.abs(beat))             # under its open click
+    assert dominant(hi) > 1.8 * dominant(lo)                    # pitched: 2× the rung, 2× the tone
+    assert dominant(lo) == pytest.approx(240, rel=0.1)          # and not adrift toward noise
+
+
 def test_and_tick_brightness_differs_by_meter():
     st.session_state["enable_upbeats"] = True
+    sr = 44100
 
-    def crossings(x):
-        return int(np.sum(np.diff(np.sign(x)) != 0))
+    def high_band_ratio(x):
+        win = np.hanning(len(x))
+        X = np.abs(np.fft.rfft(x * win))
+        f = np.fft.rfftfreq(len(x), 1 / sr)
+        return np.sum(X[f >= 2500] ** 2) / np.sum(X ** 2)
 
-    tick2 = toro.make_and_click(124, sr=4000, meter=2)
-    tick5 = toro.make_and_click(124, sr=4000, meter=5)
-    tick9 = toro.make_and_click(124, sr=4000, meter=9)
-    # Higher meters tick drier (crisper top partial), so the same closed stroke
-    # crosses zero more often — the meter's own "and" voice, staying short and
-    # closed at every meter. sr=4000 keeps the top partial under Nyquist.
-    assert crossings(tick9) > 1.5 * crossings(tick2)
-    assert crossings(tick5) > 1.3 * crossings(tick2)     # the climb is monotonic
-    assert np.allclose(tick5, toro.make_and_click(124, sr=4000, meter=5))  # deterministic
+    tick2 = toro.make_and_click(124, sr=sr, meter=2)
+    tick5 = toro.make_and_click(124, sr=sr, meter=5)
+    tick9 = toro.make_and_click(124, sr=sr, meter=9)
+    # Higher meters' brush air rides higher (drier/crisper), so the same short
+    # stroke holds a larger share of energy in the top band — the meter's own
+    # "and" shade — while the stroke stays short, closed, and deterministic.
+    assert high_band_ratio(tick9) > 1.5 * high_band_ratio(tick2)
+    assert high_band_ratio(tick5) > high_band_ratio(tick2)        # the climb is monotonic
+    assert np.allclose(tick5, toro.make_and_click(124, sr=sr, meter=5))  # deterministic
 
 
 def test_and_rings_at_the_upbeat_factor():

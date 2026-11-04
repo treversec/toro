@@ -17,6 +17,20 @@ SR = 44100
 # harmonic of a chosen fundamental. Hearing it and seeing it line up is the
 # point.
 
+def _make_crown(base_freq, sr=SR, dur=0.06):
+    """The accent's crown: a bright high glint at CROWN_RATIO × the base pitch —
+    deterministic (no noise source), so every accent beat rings the same clear
+    overtone, short enough to read as a glint on the beat rather than a ring."""
+    n = int(sr * dur)
+    t = np.linspace(0, dur, n, endpoint=False)
+    f = base_freq * CROWN_RATIO
+    attack = 1.0 - np.exp(-250 * t)
+    glint = np.sin(2 * np.pi * f * t) * attack * np.exp(-40 * t)
+    glint += 0.3 * np.sin(2 * np.pi * 2.74 * f * t) * attack * np.exp(-60 * t)
+    peak = np.max(np.abs(glint))
+    return glint / peak if peak > 0 else glint
+
+
 def _click_beep(freq, sr, dur, decay):
     """The original sound: a short pitched beep."""
     t = np.linspace(0, dur, int(sr * dur), endpoint=False)
@@ -54,22 +68,27 @@ def make_click(freq, sr=SR, dur=0.09, decay=22):
 
 
 def make_and_click(freq, sr=SR, dur=0.045, meter=1):
-    """The "and": a *closed*, staccato stroke — short, a fast downward pitch dab,
-    and a decay so tight it cannot ring, so the subdivision reads as its own
-    closed voice against the beats' open ring. `meter` is the meter's own number:
-    higher meters' ticks mix in a drier, crisper top partial, so each base's
-    "and" has its own shade without ever needing a palette big enough to run
-    out. The stroke stays deterministic (no noise source) and stays closed at
-    every meter.
+    """The "and": a light brush stroke in the jazz sense — short and closed, but
+    *pitched*: a clean tone at the and's own rung (already ×2.0+ its beat and
+    climbing the ladder) dominates, so every "and" is clearly a higher note than
+    its click and the wave's low beat → high "and" oscillation reads easily.
+    A soft deterministic high-band brush air rides underneath (~30%) for the
+    brushes softness; `meter` shades the air's band (drier, crisper, higher for
+    bigger meter numbers), so each base's "and" keeps its own voice without
+    ever needing a palette that could run out. No noise source, so the brush is
+    identical every play; the whole stroke is normalized to a light 0.55 peak.
     """
     n = int(sr * dur)
     t = np.linspace(0, dur, n, endpoint=False)
-    sweep = freq * (1.0 + 1.2 * np.exp(-60 * t))
-    phase = 2 * np.pi * np.cumsum(sweep) / sr
-    body = np.sin(phase) * np.exp(-(85 + 6 * (meter - 1)) * t)
-    crack = np.sin(2 * np.pi * (1400 + 150 * meter) * t) * np.exp(-(120 + 10 * (meter - 1)) * t)
-    mix = 0.25 + 0.55 * (meter - 1) / 8.0      # low meters: pure tick; high: drier
-    return body * (1 - mix) + crack * mix
+    tone = np.sin(2 * np.pi * freq * t) * \
+        (1.0 - np.exp(-250 * t)) * np.exp(-(100 + 8 * (meter - 1)) * t)  # pitched body
+    f0 = 2000 + 150 * meter          # the brush air's rising hand-off
+    f1 = 3200 + 200 * meter
+    air = np.sin(2 * np.pi * (f0 * t + (f1 - f0) * t ** 2 / (2 * dur))) * \
+        np.exp(-150 * t)
+    out = tone + 0.3 * air
+    peak = np.max(np.abs(out))
+    return out / peak * 0.55 if peak > 0 else out
 
 
 def _accent_deep_drum(freq, sr=SR, dur=0.16):
@@ -237,9 +256,10 @@ def and_freq(n, base_freq, rank=None):
     return meter_freq(n, base_freq, rank) * factor * (1 + 0.12 * (rung - 1))
 
 
-# The "and" between beats is a bit lighter than its beat, so the beat still leads
-# and the subdivision reads as "one *and*, two *and*" rather than a faster pulse.
-AND_GAIN = 0.7
+# The "and" between beats is a light high brush — its stroke is normalized to a
+# soft 0.55 peak and stays pitched at its (higher) rung, so the subdivision
+# reads as "one *and*, two *and*" — lighter, higher — under the beats.
+AND_GAIN = 0.55
 
 # Spoken counts are off until toggled on (see sidebar widgets). Session state
 # holds the live value: enable_counts (bool).
@@ -316,6 +336,9 @@ def render_meter_track(n, cycle_len, base_freq, sr=SR, rank=None):
     for i, p in enumerate(positions):
         click = make_click(beat_freq(n, base_freq, i, rank), sr=sr)
         add_wrapped(track, click, int(p * sr))
+        if rank == 1:  # the foundation's beats wear the bright crown glint
+            crown = _make_crown(base_freq, sr=sr) * CROWN_GAIN
+            add_wrapped(track, crown, int(p * sr))
         if st.session_state.get("enable_upbeats", DEFAULT_UPBEATS):
             and_p = p + cycle_len / n / 2  # the "and" between this beat and the next
             add_wrapped(track, make_and_click(and_freq(n, base_freq, rank), sr=sr,
@@ -335,6 +358,13 @@ DEFAULT_WAVE_AMP = 0.4
 # pitch, it is mixed slightly louder so it leads the polyrhythm rather than
 # competing with it.
 BASIS_GAIN = 1.35
+
+# The accent also wears a *crown*: each of its beats gains a bright high glint at
+# CROWN_RATIO × the base pitch (≈265 Hz at base 55, clearing the stack's top of
+# ~4.4× at any meter count), mixed at CROWN_GAIN, on top of the low+loud body —
+# so the lead reads "low + loud + glinting" and rotation hand-offs visibly move.
+CROWN_RATIO = 4.8
+CROWN_GAIN = 0.5
 
 
 def lead_with(chosen, accent):
@@ -483,6 +513,9 @@ def render_node(node, start, end, base_freq, amp_scale, amp, track, sr):
         t = start + i * step
         click = make_click(beat_freq(node.meter, base_freq, i, node.rank), sr=sr)
         add_wrapped(track, click * amp, int(t * sr))
+        if node.rank == 1:  # the foundation base's beats wear the bright crown
+            crown = _make_crown(base_freq, sr=sr) * CROWN_GAIN
+            add_wrapped(track, crown * amp, int(t * sr))
         if st.session_state.get("enable_upbeats", DEFAULT_UPBEATS):
             and_click = make_and_click(and_freq(node.meter, base_freq, node.rank), sr=sr,
                                        meter=node.meter)
@@ -674,8 +707,9 @@ st.sidebar.toggle(
     "Play 'and' between each beat",
     value=st.session_state.get("enable_upbeats", DEFAULT_UPBEATS),
     key="enable_upbeats",
-    help="Add a lighter between-each 'and' — the 'and' of 'one and, two and' — "
-         "halfway between a pulse's beats, ringing at the upbeat pitch.",
+    help="Add a light, high 'and' — the 'and' of 'one and, two and' — "
+         "halfway between a pulse's beats: a soft pitched brush clearly above "
+         "its beat, ringing at the upbeat pitch.",
 )
 if st.session_state.get("enable_upbeats", DEFAULT_UPBEATS):
     st.sidebar.slider(
@@ -780,7 +814,7 @@ choose_col, accent_col = st.columns(2)
 with accent_col:
     if chosen:
         accent = st.radio(
-            "Accent meter (the foundation — lowest and slightly louder)",
+            "Accent meter (the foundation — lowest, louder, crowned)",
             options=list(chosen),
             key="pyramid_accent",
         )
