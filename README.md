@@ -35,7 +35,10 @@ fundamental, so you hear the metaphor, not just the beat.
   optional "waves under the clicks" mode where each beat's audible swell rings
   at that pulse's own frequency, and optional **spoken counts**: the accent
   meter says "one, and, two, and…" over its own beats, so you hear the lead
-  meter's count riding the groove. The *accent* is the perspective — in the
+  meter's count riding the groove. The accent's "and"s carry a loudness floor
+  that outlives the mix normalization, so the lead stays as easy to make out
+  when several bases play as it is alone, while every other meter keeps its
+  own identity "and". The *accent* is the perspective — in the
   pyramid and in the fractals alike: a radio picks which meter is the
   foundation — lowest and slightly louder, crowned with a bright high glint on
   its beats — and each later pick perches one rung higher after it.

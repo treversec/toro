@@ -316,7 +316,8 @@ def add_counts(track, accent, cycle_len, base_freq, sr=SR, words=None):
     return track
 
 
-def render_meter_track(n, cycle_len, base_freq, sr=SR, rank=None):
+def render_meter_track(n, cycle_len, base_freq, sr=SR, rank=None,
+                       delay_upbeats=False):
     """n evenly spaced clicks across one cycle, pitched by its *position in the
     selection order*: rank 1 (the first-picked meter) is the foundation and rings
     the lowest pitch, rank 2 the next, and so on — so the user's selection order
@@ -324,6 +325,10 @@ def render_meter_track(n, cycle_len, base_freq, sr=SR, rank=None):
 
     Downbeats ring at the (rank-keyed) base pitch, while upbeats (the even
     2nd/4th/6th...) ring a raised pitch, so the two are easy to tell apart.
+    `delay_upbeats` withholds this meter's upbeats for the accent-meter callers
+    that re-stamp them through `add_lead_and_guard` (the loudness floor); the
+    meter's other content — beats, crown, wave crest on the upbeat — still
+    sounds exactly as before.
 
     Returns a single cycle built to loop seamlessly: a click that would
     overhang the end of the cycle is wrapped back onto the start, so the
@@ -339,7 +344,7 @@ def render_meter_track(n, cycle_len, base_freq, sr=SR, rank=None):
         if rank == 1:  # the foundation's beats wear the bright crown glint
             crown = _make_crown(base_freq, sr=sr) * CROWN_GAIN
             add_wrapped(track, crown, int(p * sr))
-        if st.session_state.get("enable_upbeats", DEFAULT_UPBEATS):
+        if st.session_state.get("enable_upbeats", DEFAULT_UPBEATS) and not delay_upbeats:
             and_p = p + cycle_len / n / 2  # the "and" between this beat and the next
             add_wrapped(track, make_and_click(and_freq(n, base_freq, rank), sr=sr,
                                               meter=n) * AND_GAIN,
@@ -349,6 +354,14 @@ def render_meter_track(n, cycle_len, base_freq, sr=SR, rank=None):
         _add_wave(track, n, 0.0, cycle_len, base_freq, sr=sr, amp=wave_amp, rank=rank)
     return track
 
+
+# The accent meter's upbeats carry a *loudness floor*: though each downbeat's
+# "and" is mixed at AND_GAIN, the final clip peak (beats + crowns + waves) grows
+# as bases stack and the 0.9 normalization would crush it — so the accent's
+# upbeats are re-stamped at AND_FLOOR × the mix peak before the normalize. They
+# land at AND_FLOOR in the finished clip (the same fullness as solo), still
+# lighter than the 0.9 click, while other meters keep their identity "and" level.
+AND_FLOOR = 0.33
 
 # Default for the "waves under the clicks" option (see sidebar widgets).
 # Session state holds: waves (bool) and wave_amp (float).
@@ -373,6 +386,42 @@ def lead_with(chosen, accent):
     return [accent] + [m for m in chosen if m != accent]
 
 
+def add_lead_and_guard(cycle, accent, cycle_len, base_freq, sr=SR):
+    """Re-stamp the accent meter's upbeats at AND_FLOOR × the mix peak so they
+    outlive the final 0.9 normalize — the stacked beats/crowns/waves would
+    otherwise use the whole peak budget up and crush the "and". Called with the
+    accent's own upbeats withheld (`delay_upbeats`), before normalization.
+
+    Each swipe is aligned with whatever the mix already holds at its own peak
+    sample (phase-flipped to reinforce it, the way a wave crest carries the
+    "and"), so the composite reaches AND_FLOOR *whatever the background happens
+    to be doing* — a fixed-level add could otherwise be buried by an
+    anti-phased swell. The result still reads lighter than the 0.9 click, and
+    other meters' identity upbeats keep AND_GAIN. Wrapped like every upbeat, so
+    the loop point stays seamless."""
+    if not st.session_state.get("enable_upbeats", DEFAULT_UPBEATS):
+        return cycle
+    peak = np.max(np.abs(cycle))
+    if peak <= 0:
+        return cycle
+    target = peak * AND_FLOOR / 0.9
+    total = len(cycle)
+    for p in np.linspace(0, cycle_len, accent, endpoint=False):
+        click = make_and_click(and_freq(accent, base_freq, 1), sr=sr, meter=accent)
+        span = np.max(np.abs(click))
+        if span <= 0:
+            continue
+        click = click / span                  # unit peak: its loudest sample reads 1
+        k = int(np.argmax(np.abs(click)))
+        mid = int((p + cycle_len / accent / 2) * sr)
+        bg = cycle[(mid + k) % total]         # the mix exactly under that sample
+        amp = max(0.6, target - abs(bg))      # lift to the floor; keep the body's shape
+        if bg * click[k] < 0:
+            click = -click                    # reinforce the background, don't fight it
+        add_wrapped(cycle, click * amp, mid)
+    return cycle
+
+
 def render_meter_mix(meters, cycle_len, base_freq, sr=SR):
     """Mix the given meters into one (mono) cycle, adding the cycle accent. The
     first-picked meter is the foundation: it keeps the lowest pitch and a slight
@@ -380,8 +429,11 @@ def render_meter_mix(meters, cycle_len, base_freq, sr=SR):
     cycle = np.zeros(int(cycle_len * sr))
     for idx, n in enumerate(meters):
         gain = BASIS_GAIN if idx == 0 else 1.0
-        cycle += render_meter_track(n, cycle_len, base_freq, sr=sr, rank=idx + 1) * gain
+        cycle += render_meter_track(n, cycle_len, base_freq, sr=sr, rank=idx + 1,
+                                    delay_upbeats=(idx == 0)) * gain
     add_cycle_accent(cycle, sr=sr)
+    if meters:  # the lead's upbeats get their loudness floor before normalize
+        add_lead_and_guard(cycle, meters[0], cycle_len, base_freq, sr=sr)
     return cycle
 
 
@@ -497,12 +549,15 @@ class Node:
         return f"({self.meter}[{marks}]/{inner})"
 
 
-def render_node(node, start, end, base_freq, amp_scale, amp, track, sr):
+def render_node(node, start, end, base_freq, amp_scale, amp, track, sr,
+                delay_upbeats=False):
     """Recursively render one pattern into `track` spanning `[start, end]`.
 
     The node's own `meter` clicks always sound. Its sub-patterns play over
     every beat whose index is in `node.on` (the pulses being fractalized),
     quieter by `amp_scale`, so full patterns nest on top of patterns.
+    `delay_upbeats` withholds the node's own "and"s; the forest callers pass it
+    for the accent root so its upbeats are re-stamped at the loudness floor.
     """
     span = end - start
     step = span / node.meter
@@ -516,7 +571,7 @@ def render_node(node, start, end, base_freq, amp_scale, amp, track, sr):
         if node.rank == 1:  # the foundation base's beats wear the bright crown
             crown = _make_crown(base_freq, sr=sr) * CROWN_GAIN
             add_wrapped(track, crown * amp, int(t * sr))
-        if st.session_state.get("enable_upbeats", DEFAULT_UPBEATS):
+        if st.session_state.get("enable_upbeats", DEFAULT_UPBEATS) and not delay_upbeats:
             and_click = make_and_click(and_freq(node.meter, base_freq, node.rank), sr=sr,
                                        meter=node.meter)
             add_wrapped(track, and_click * amp * AND_GAIN, int((t + step / 2) * sr))
@@ -541,14 +596,16 @@ def render_forest(roots, cycle_len, base_freq, amp_scale=0.6, sr=SR,
     app default to the cached gTTS voice.
     """
     one_cycle = np.zeros(int(cycle_len * sr))
-    for node in roots:
+    for idx, node in enumerate(roots):
         render_node(node, 0.0, cycle_len, base_freq, amp_scale, 1.0,
-                    one_cycle, sr)
+                    one_cycle, sr, delay_upbeats=(idx == 0))
     if accent:
         add_cycle_accent(one_cycle, sr=sr)
     if roots and st.session_state.get("enable_counts", DEFAULT_COUNTS):
         add_counts(one_cycle, roots[0].meter, cycle_len, base_freq, sr=sr,
                   words=count_words)
+    if roots:  # the accent root's upbeats get their loudness floor before normalize
+        add_lead_and_guard(one_cycle, roots[0].meter, cycle_len, base_freq, sr=sr)
     peak = np.max(np.abs(one_cycle))
     if peak > 0:
         one_cycle = one_cycle / peak * 0.9
@@ -709,7 +766,8 @@ st.sidebar.toggle(
     key="enable_upbeats",
     help="Add a light, high 'and' — the 'and' of 'one and, two and' — "
          "halfway between a pulse's beats: a soft pitched brush clearly above "
-         "its beat, ringing at the upbeat pitch.",
+         "its beat, ringing at the upbeat pitch. The accent meter's 'and's "
+         "hold a loudness floor, so the lead stays audible in a full stack.",
 )
 if st.session_state.get("enable_upbeats", DEFAULT_UPBEATS):
     st.sidebar.slider(
