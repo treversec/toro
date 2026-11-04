@@ -677,7 +677,7 @@ not just the beat.
 )
 
 st.sidebar.header("Settings")
-cycle_len = st.sidebar.slider("Cycle length ('one'), seconds", 1.0, 8.0, 4.0, 0.25,
+cycle_len = st.sidebar.slider("Cycle length ('one'), seconds", 1.0, 8.0, 2.0, 0.25,
                              key="cycle_len")
 base_freq = st.sidebar.slider("Fundamental (lowest) frequency (Hz)",
                               20, 140, 40, 5)
