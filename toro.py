@@ -733,6 +733,19 @@ not just the beat.
 """
 )
 
+# The accent radios (pyramid and fractal alike) offer each single base plus one
+# *rotation* option: pick a meter for a fixed lead, or pick ALTERNATE_ACCENT to
+# hand the lead from base to base within one clip.
+ALTERNATE_ACCENT = "alternate"
+
+
+def _accent_label(value):
+    """Radio labels: the meters show their number; the rotation option names
+    what it does, so the radio reads as choices about who leads."""
+    if value == ALTERNATE_ACCENT:
+        return "Alternate — every base leads in turn"
+    return str(value)
+
 st.sidebar.header("Settings")
 cycle_len = st.sidebar.slider("Cycle length ('one'), seconds", 1.0, 8.0, 2.0, 0.25,
                              key="cycle_len")
@@ -784,23 +797,6 @@ st.sidebar.toggle(
     help="A voice counts over the rhythm: the accent meter says 'one, and, two, "
          "and…' over its own beats — the lead meter's count riding the groove.",
 )
-st.sidebar.toggle(
-    "Alternate the accent every N cycles",
-    value=st.session_state.get("rotate_accent", False),
-    key="rotate_accent",
-    help="Hand the accent (and the spoken count, when on) from base to base "
-         "within one clip: each base leads for a turn, then the next — the "
-         "radio's pick starts the rotation, the rest follow your selection order.",
-)
-if st.session_state.get("rotate_accent", False):
-    st.sidebar.slider(
-        "Cycles per accent (turn length)",
-        min_value=1, max_value=4, value=2, step=1,
-        key="rotate_turn_len",
-        help="How many cycles each base leads before the accent hands off. The "
-             "clip always gives every base its turn, so its minimum length is "
-             "bases × this many cycles.",
-    )
 cycle_accent = st.sidebar.radio(
     "Cycle start indicator",
     options=["Off"] + list(_CYCLE_ACCENTS),
@@ -873,28 +869,37 @@ with accent_col:
     if chosen:
         accent = st.radio(
             "Accent meter (the foundation — lowest, louder, crowned)",
-            options=list(chosen),
+            options=list(chosen) + [ALTERNATE_ACCENT],
+            format_func=_accent_label,
             key="pyramid_accent",
         )
+        if accent == ALTERNATE_ACCENT:
+            st.slider(
+                "Cycles per accent (turn length)",
+                min_value=1, max_value=4, value=2, step=1,
+                key="turn_len_pyramid",
+                help="How many cycles each base leads before the accent hands "
+                     "off. The clip always gives every base its turn, so its "
+                     "minimum length is bases × this many cycles.",
+            )
 
 with choose_col:
     if st.button("Play selected pyramid", type="primary"):
         if not chosen:
             st.warning("Select at least one meter first.")
-        elif st.session_state.get("rotate_accent", False):
-            turn_len = st.session_state.get("rotate_turn_len", 2)
-            order = lead_with(chosen, accent)
+        elif accent == ALTERNATE_ACCENT:
+            turn_len = st.session_state.get("turn_len_pyramid", 2)
             clip = render_rotated(chosen, cycle_len, base_freq,
-                                  turn_len=turn_len, accent=accent)
+                                  turn_len=turn_len, accent=chosen[0])
             play_looped(clip, num_cycles)
             st.pyplot(draw_timeline(chosen, cycle_len))
             st.caption(
                 f"Meters {', '.join(map(str, chosen))} all fill the same "
-                f"{cycle_len:.2f}s cycle; the accent rotates through "
-                f"{', '.join(map(str, order))} every {turn_len} cycle(s) — "
-                f"**{accent}** leads first — each base lowest and slightly "
-                "louder during its turn, the rest following your selection "
-                "order above it."
+                f"{cycle_len:.2f}s cycle; the accent alternates through "
+                f"{', '.join(map(str, lead_with(chosen, chosen[0])))} every "
+                f"{turn_len} cycle(s) — each base lowest and slightly louder "
+                "during its turn, the rest following your selection order above "
+                "it."
             )
         else:
             ordered = lead_with(chosen, accent)
@@ -1014,17 +1019,27 @@ with fractal_accent_col:
     if chosen_bases:
         accent_base = st.radio(
             "Accent base (the foundation of every layer)",
-            options=list(chosen_bases),
+            options=list(chosen_bases) + [ALTERNATE_ACCENT],
+            format_func=_accent_label,
             key="fractal_accent",
         )
+        if accent_base == ALTERNATE_ACCENT:
+            st.slider(
+                "Cycles per accent (turn length)",
+                min_value=1, max_value=4, value=2, step=1,
+                key="turn_len_fractal",
+                help="How many cycles each base is the foundation before the "
+                     "accent hands off. The clip always gives every base its "
+                     "turn, so its minimum length is bases × this many cycles.",
+            )
 
 with fractal_col:
     if st.button("Play fractal loop", type="primary"):
         if not chosen_bases:
             st.warning("Select at least one base meter first.")
-        elif st.session_state.get("rotate_accent", False):
-            turn_len = st.session_state.get("rotate_turn_len", 2)
-            order = lead_with(chosen_bases, accent_base)
+        elif accent_base == ALTERNATE_ACCENT:
+            turn_len = st.session_state.get("turn_len_fractal", 2)
+            order = lead_with(chosen_bases, chosen_bases[0])
             turn_roots = []
             oversize = False
             for m in order:
@@ -1048,10 +1063,11 @@ with fractal_col:
                     "Base polyrhythm: "
                     + ", ".join(map(str, chosen_bases))
                     + f" over the {cycle_len:.2f}s cycle, nested {depth} level(s) "
-                    "deep on the selected pulses; the accent base rotates through "
+                    "deep on the selected pulses; the accent base alternates "
+                    "through "
                     f"{', '.join(map(str, order))} every {turn_len} cycle(s) — "
-                    f"**{accent_base}** leads first — each base lowest and "
-                    "slightly louder during its turn, at every depth."
+                    "each base lowest and slightly louder during its turn, at "
+                    "every depth."
                 )
         else:
             ordered_bases = lead_with(chosen_bases, accent_base)

@@ -6,6 +6,7 @@ with a `StreamlitDuplicateElementId` unless each carries a unique `key`.
 """
 from pathlib import Path
 
+import toro
 from streamlit.testing.v1 import AppTest
 
 APP = str(Path(__file__).resolve().parent.parent / "toro.py")
@@ -42,14 +43,25 @@ def test_spoken_counts_toggle_defaults_off():
     assert len(app.exception) == 0
 
 
-def test_rotate_accent_toggle_defaults_off_and_offers_turn_length():
+def test_alternate_option_sits_on_each_accent_radio():
     app = AppTest.from_file(APP, default_timeout=30)
     app.run()
-    assert app.toggle(key="rotate_accent").value is False
-    app.toggle(key="rotate_accent").set_value(True)
+    # Both accent radios offer the rotation option after the single bases
+    # (listed by its formatted label; selected by its sentinel value).
+    alt_label = toro._accent_label(toro.ALTERNATE_ACCENT)
+    assert alt_label in app.radio(key="pyramid_accent").options
+    assert alt_label in app.radio(key="fractal_accent").options
+    # Picking it on the pyramid radio surfaces that section's turn slider (2 by
+    # default) — and the fractal one stays independent with its own key.
+    app.radio(key="pyramid_accent").set_value(toro.ALTERNATE_ACCENT)
     app.run()
-    assert app.slider(key="rotate_turn_len").value == 2   # "every two measures" default
+    assert app.slider(key="turn_len_pyramid").value == 2
+    app.radio(key="fractal_accent").set_value(toro.ALTERNATE_ACCENT)
+    app.run()
+    assert app.slider(key="turn_len_fractal").value == 2
     assert len(app.exception) == 0
+    # The old sidebar toggle is gone — there is no global rotate switch anymore.
+    assert not any(w.key == "rotate_accent" for w in app.toggle)
 
 
 def test_accent_radios_default_to_first_pick_and_rerun_cleanly():

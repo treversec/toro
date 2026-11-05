@@ -41,10 +41,11 @@ fundamental, so you hear the metaphor, not just the beat.
   own identity "and". The *accent* is the perspective — in the
   pyramid and in the fractals alike: a radio picks which meter is the
   foundation — lowest and slightly louder, crowned with a bright high glint on
-  its beats — and each later pick perches one rung higher after it.
-  An "alternate the accent" option hands the lead (and the spoken count)
-  from base to base every N cycles inside one clip, always giving every
-  selected base its turn.
+  its beats — and each later pick perches one rung higher after it. Each
+  section's accent radio also offers an "alternate" option that hands the
+  lead (and the spoken count) from base to base every N cycles inside one
+  clip, always giving every selected base its turn — the pyramid and the
+  fractal alternate independently.
 - **Seamless looping.** Every cycle loops cleanly into the next, with
   configurable repetition counts for longer listening buffers.
 - **Stereo spread.** Split the base pyramid across left/right channels to
